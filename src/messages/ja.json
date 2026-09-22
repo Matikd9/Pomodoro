@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "有効にすると、進捗アークがゼロに向かってカウントダウンします（塗りつぶしではなく）。",
   "tooltip_auto_start_work": "休憩終了後に次の作業ラウンドを自動的に開始する。",
   "tooltip_auto_start_break": "作業ラウンド終了後に休憩を自動的に開始する。",
-  "tooltip_websocket": "ストリームオーバーレイなどの外部統合用のローカルWebSocketサーバーを有効にします。デフォルトでは無効です。"
+  "tooltip_websocket": "配信オーバーレイなどの外部連携用にローカルWebSocketサーバーを有効にします。デフォルトは無効です。",
+  "timer_today_focus": "今日: {time}",
+  "tooltip_today_focus": "今日蓄積された合計集中時間。",
+  "task_label": "タスク",
+  "task_create_placeholder": "新しいタスク…",
+  "task_create_button": "作成",
+  "task_change_tooltip": "集中タスクの変更または作成",
+  "stats_tasks_breakdown": "タスク別の時間"
 }

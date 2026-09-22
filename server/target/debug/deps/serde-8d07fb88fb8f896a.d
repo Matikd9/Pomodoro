@@ -1,0 +1,12 @@
+C:\Users\Matiql\Documents\Repos\pomotroid\server\target\debug\deps\serde-8d07fb88fb8f896a.d: C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\Matiql\Documents\Repos\pomotroid\server\target\debug\build\serde-6f49a71a02fc6c76\out/private.rs
+
+C:\Users\Matiql\Documents\Repos\pomotroid\server\target\debug\deps\libserde-8d07fb88fb8f896a.rmeta: C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs C:\Users\Matiql\Documents\Repos\pomotroid\server\target\debug\build\serde-6f49a71a02fc6c76\out/private.rs
+
+C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\lib.rs:
+C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\integer128.rs:
+C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\mod.rs:
+C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\de.rs:
+C:\Users\Matiql\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.229\src\private\ser.rs:
+C:\Users\Matiql\Documents\Repos\pomotroid\server\target\debug\build\serde-6f49a71a02fc6c76\out/private.rs:
+
+# env-dep:OUT_DIR=C:\\Users\\Matiql\\Documents\\Repos\\pomotroid\\server\\target\\debug\\build\\serde-6f49a71a02fc6c76\\out

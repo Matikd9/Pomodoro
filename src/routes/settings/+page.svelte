@@ -6,9 +6,10 @@
   import { applyTheme } from '$lib/stores/theme';
   import { resolveThemeName } from '$lib/utils/theme';
   import { setLocale } from '$lib/locale.svelte.js';
+  import { isTauri } from '$lib/utils/platform';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import { info, error as logError } from '@tauri-apps/plugin-log';
+  import { logInfo as info, logError } from '$lib/utils/log';
   import { createLocalShortcutHandler } from '$lib/utils/localShortcuts';
 
   import SettingsTitlebar from '$lib/components/settings/SettingsTitlebar.svelte';
@@ -78,7 +79,9 @@
         await info(`[settings] initialized, theme=${activeTheme?.name ?? 'none'}`);
 
         // Show the window now that the theme is applied (avoids white flash)
-        await getCurrentWebviewWindow().show();
+        if (isTauri) {
+          await getCurrentWebviewWindow().show();
+        }
       } catch (e) {
         await logError(`[settings] initialization failed: ${e}`);
         throw e;

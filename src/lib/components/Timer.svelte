@@ -21,6 +21,7 @@
   import TimerFooter from './TimerFooter.svelte';
   import MiniControls from './MiniControls.svelte';
   import Tooltip from './Tooltip.svelte';
+  import TaskSelector from './TaskSelector.svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import * as m from '$paraglide/messages.js';
   import { notificationShow } from '$lib/ipc';
@@ -33,6 +34,20 @@
   let { isCompact = false, uiScale = 1 }: Props = $props();
 
   let state = $derived($timerState);
+
+  const currentTotalTodaySecs = $derived(
+    (state.today_focus_secs ?? 0) + (state.round_type === 'work' ? state.elapsed_secs : 0)
+  );
+
+  function fmtTodayTime(secs: number): string {
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+
+  const formattedTodayTime = $derived(fmtTodayTime(currentTotalTodaySecs));
 
   function roundColor(rt: string): string {
     if (rt === 'work') return 'var(--color-focus-round)';
@@ -115,6 +130,10 @@
 
 <div class="timer-outer" class:compact={isCompact}>
   <div class="timer" style="zoom: {uiScale}">
+    {#if !isCompact}
+      <TaskSelector />
+    {/if}
+
     <!-- Dial + display stacked (display centered over dial) -->
     <div class="dial-stack">
       <TimerDial snap={state} countdown={$settings.dial_countdown} />
@@ -173,6 +192,13 @@
 
         <TimerFooter snap={state} />
       </div>
+
+      <!-- Today's total focus time -->
+      <Tooltip text={m.tooltip_today_focus()}>
+        <div class="today-focus">
+          {m.timer_today_focus({ time: formattedTodayTime })}
+        </div>
+      </Tooltip>
     {/if}
   </div>
 
@@ -182,6 +208,27 @@
 </div>
 
 <style>
+  .today-focus {
+    font-size: 0.73rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    color: var(--color-foreground-darker);
+    cursor: default;
+    opacity: 0.85;
+    margin-top: -8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition:
+      color var(--transition-default),
+      opacity var(--transition-default);
+  }
+
+  .today-focus:hover {
+    color: var(--color-foreground);
+    opacity: 1;
+  }
+
   .timer-outer {
     display: flex;
     flex-direction: column;

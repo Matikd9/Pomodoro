@@ -5,12 +5,14 @@ The main window is declared in `tauri.conf.json` with a fixed size and no positi
 ## Goals / Non-Goals
 
 **Goals:**
+
 - Restore the main window to its last known position and size on every launch.
 - Validate the saved position against the live display layout before applying it; fall back to the OS default if the position is no longer on any screen.
 - Persist position/size changes as they happen (move and resize events), not only on close.
 - Keep the implementation entirely in Rust/Tauri — no frontend changes.
 
 **Non-Goals:**
+
 - Remembering positions for the Settings or Statistics child windows (they are transient and short-lived).
 - Smooth animated repositioning.
 - Per-display profile (remembering different positions per monitor configuration).
@@ -20,6 +22,7 @@ The main window is declared in `tauri.conf.json` with a fixed size and no positi
 
 **Store x/y as separate integer keys in the settings DB.**
 `window_x`, `window_y`, `window_width`, `window_height` as four string-encoded `i32`/`u32` values. Alternatives considered:
+
 - A single JSON blob (`{"x":…}`) — more compact but requires a JSON dependency or manual parsing; overkill for four scalars.
 - New dedicated table — unnecessary; the existing settings KV table is the canonical store for all persistent config.
 

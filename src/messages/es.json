@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "Cuando está activado, el arco de progreso cuenta regresivamente hasta cero en lugar de llenarse.",
   "tooltip_auto_start_work": "Iniciar automáticamente la siguiente ronda de trabajo cuando termina un descanso.",
   "tooltip_auto_start_break": "Iniciar automáticamente el descanso cuando termina una ronda de trabajo.",
-  "tooltip_websocket": "Activa un servidor WebSocket local para integraciones externas como overlays de streaming. Desactivado por defecto."
+  "tooltip_websocket": "Activa un servidor WebSocket local para integraciones externas como overlays de streaming. Desactivado por defecto.",
+  "timer_today_focus": "Hoy: {time}",
+  "tooltip_today_focus": "Tiempo total de concentración acumulado hoy.",
+  "task_label": "Tarea",
+  "task_create_placeholder": "Nueva tarea o materia…",
+  "task_create_button": "Crear",
+  "task_change_tooltip": "Cambiar o crear tarea de concentración",
+  "stats_tasks_breakdown": "Tiempo por tarea"
 }

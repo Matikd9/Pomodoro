@@ -6,8 +6,7 @@
   import LocalShortcutInput from '$lib/components/LocalShortcutInput.svelte';
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import * as m from '$paraglide/messages.js';
-  import { isMac } from '$lib/utils/platform';
-  import { openUrl } from '@tauri-apps/plugin-opener';
+  import { isMac, openExternalUrl } from '$lib/utils/platform';
 
   const ACCESSIBILITY_URL =
     'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
@@ -126,7 +125,7 @@
     {#if isMac && !trusted}
       <div class="accessibility-notice">
         <p class="notice-text">{m.shortcuts_accessibility_notice()}</p>
-        <button class="notice-btn" onclick={() => openUrl(ACCESSIBILITY_URL)}>
+        <button class="notice-btn" onclick={() => openExternalUrl(ACCESSIBILITY_URL)}>
           {m.shortcuts_accessibility_open()}
         </button>
       </div>

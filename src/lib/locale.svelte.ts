@@ -1,6 +1,6 @@
 import { overwriteGetLocale, baseLocale, locales } from '$paraglide/runtime.js';
 import { resolveLocale } from '$lib/utils/locale';
-import { info } from '@tauri-apps/plugin-log';
+import { logInfo as info } from '$lib/utils/log';
 
 type SupportedLocale = (typeof locales)[number];
 

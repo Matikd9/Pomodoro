@@ -1,11 +1,57 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { settings } from '$lib/stores/settings';
-  import { setSetting, resetSettings, clearSessionHistory, traySupported } from '$lib/ipc';
+  import {
+    setSetting,
+    resetSettings,
+    clearSessionHistory,
+    traySupported,
+    getRemoteServerUrl,
+    setRemoteServerUrl,
+    isRemoteMode,
+  } from '$lib/ipc';
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import * as m from '$paraglide/messages.js';
   import { setLocale } from '$lib/locale.svelte.js';
-  import { isMac, isLinux } from '$lib/utils/platform';
+  import { isMac, isLinux, isTauri } from '$lib/utils/platform';
+
+  let remoteUrlInput = $state(
+    typeof window !== 'undefined' ? (localStorage.getItem('pomotroid_remote_url') ?? '') : ''
+  );
+  let remoteLoading = $state(false);
+  let remoteStatus = $state<string | null>(null);
+  let remoteStatusError = $state(false);
+
+  async function handleSaveRemoteUrl() {
+    const trimmed = remoteUrlInput.trim();
+    if (!trimmed) {
+      setRemoteServerUrl(null);
+      remoteStatusError = false;
+      remoteStatus = 'Modo local activado. Recargando...';
+      setTimeout(() => window.location.reload(), 600);
+      return;
+    }
+    remoteLoading = true;
+    remoteStatus = 'Comprobando conexión con el servidor...';
+    remoteStatusError = false;
+    try {
+      const target = trimmed.replace(/\/+$/, '');
+      const res = await fetch(`${target}/api/state`, { signal: AbortSignal.timeout(3500) });
+      if (res.ok) {
+        setRemoteServerUrl(target);
+        remoteStatus = '¡Conexión establecida! Recargando...';
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        remoteStatusError = true;
+        remoteStatus = `El servidor respondió con código ${res.status}. Verifica que Pomotroid Server esté iniciado.`;
+      }
+    } catch {
+      remoteStatusError = true;
+      remoteStatus = `No se pudo conectar a ${trimmed}. Asegúrate de que la IP y el puerto 8085 sean correctos y Tailscale esté activo.`;
+    } finally {
+      remoteLoading = false;
+    }
+  }
 
   // Language options: value stored in DB, label shown in native language.
   const LANGUAGES = [
@@ -114,6 +160,36 @@
       <code>{'{ "type": "getState" }'}</code> to query the current timer state. Round changes are broadcast
       automatically.
     </p>
+  {/if}
+
+  <div class="group-heading">Servidor Remoto (Tailscale / Docker)</div>
+  <div class="row">
+    <div class="remote-labels">
+      <span class="label">Dirección del Servidor</span>
+      <span class="sublabel">
+        {#if !isTauri}
+          Web conectada a {typeof window !== 'undefined' ? window.location.origin : 'servidor'}
+        {:else if isRemoteMode()}
+          Conectado actualmente al servidor remoto
+        {:else}
+          Modo local (Tauri). Conecta a tu notebook para sincronizar.
+        {/if}
+      </span>
+    </div>
+    <div class="remote-action-group">
+      <input
+        class="remote-input"
+        type="text"
+        placeholder="http://100.x.y.z:8085"
+        bind:value={remoteUrlInput}
+      />
+      <button class="btn-connect" onclick={handleSaveRemoteUrl} disabled={remoteLoading}>
+        {remoteLoading ? '...' : 'Guardar'}
+      </button>
+    </div>
+  </div>
+  {#if remoteStatus}
+    <p class="note" class:note-error={remoteStatusError}>{remoteStatus}</p>
   {/if}
 
   <div class="group-heading">{m.system_group_language()}</div>
@@ -501,5 +577,66 @@
   .confirm-destructive:hover {
     background: color-mix(in oklch, var(--color-accent) 10%, transparent);
     border-color: var(--color-accent);
+  }
+
+  .remote-labels {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sublabel {
+    font-size: 0.72rem;
+    color: var(--color-foreground-darker, var(--color-foreground));
+    opacity: 0.7;
+  }
+
+  .remote-action-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .remote-input {
+    background: var(--color-hover);
+    border: 1px solid color-mix(in oklch, var(--color-foreground) 18%, transparent);
+    border-radius: 4px;
+    color: var(--color-foreground);
+    font-size: 0.82rem;
+    font-family: monospace;
+    padding: 5px 10px;
+    width: 190px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .remote-input:focus {
+    border-color: var(--color-accent);
+  }
+
+  .btn-connect {
+    background: var(--color-focus-round);
+    color: var(--color-background);
+    border: none;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .btn-connect:hover {
+    opacity: 0.9;
+  }
+
+  .btn-connect:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .note-error {
+    color: var(--color-focus-round) !important;
+    opacity: 1 !important;
   }
 </style>

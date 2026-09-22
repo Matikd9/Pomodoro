@@ -15,12 +15,11 @@
   import { applyTheme } from '$lib/stores/theme';
   import { setLocale } from '$lib/locale.svelte.js';
   import { resolveThemeName } from '$lib/utils/theme';
-  import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import { isMac } from '$lib/utils/platform';
+  import { isMac, isTauri } from '$lib/utils/platform';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import type { DetailedStats, HeatmapStats } from '$lib/types';
   import * as m from '$paraglide/messages.js';
-  import { info, error as logError } from '@tauri-apps/plugin-log';
+  import { logInfo as info, logError } from '$lib/utils/log';
 
   import DailyView from '$lib/components/stats/DailyView.svelte';
   import WeeklyView from '$lib/components/stats/WeeklyView.svelte';
@@ -45,8 +44,13 @@
     }
   }
 
-  function close() {
-    getCurrentWebviewWindow().close();
+  async function close() {
+    if (isTauri) {
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+      getCurrentWebviewWindow().close();
+    } else {
+      window.location.href = '/';
+    }
   }
 
   onMount(() => {
@@ -65,7 +69,10 @@
         if (activeTheme) applyTheme(activeTheme);
 
         // Show window immediately after theme is applied
-        await getCurrentWebviewWindow().show();
+        if (isTauri) {
+          const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+          await getCurrentWebviewWindow().show();
+        }
 
         detailed = await statsGetDetailed();
         await info(`[stats] initialized, theme=${activeTheme?.name ?? 'none'}`);
@@ -176,7 +183,11 @@
     {#if activeTab === 'today'}
       <DailyView today={detailed?.today ?? null} />
     {:else if activeTab === 'week'}
-      <WeeklyView week={detailed?.week ?? null} streak={detailed?.streak ?? null} />
+      <WeeklyView
+        week={detailed?.week ?? null}
+        streak={detailed?.streak ?? null}
+        tasks={detailed?.week_tasks ?? null}
+      />
     {:else}
       <YearlyView {heatmap} />
     {/if}
@@ -280,7 +291,8 @@
   /* ── Content ───────────────────────────────────────────── */
   .content {
     flex: 1;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
   }

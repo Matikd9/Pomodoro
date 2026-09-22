@@ -21,6 +21,11 @@
     return `${Math.round(rate * 100)}%`;
   }
 
+  function fmtRounds(r: number | undefined | null): string {
+    if (r === undefined || r === null) return '—';
+    return Number(r.toFixed(2)).toString();
+  }
+
   const byHour = $derived(today?.by_hour ?? Array(24).fill(0));
   const maxHour = $derived(Math.max(1, ...byHour));
   const hasData = $derived(today !== null && today.rounds > 0);
@@ -34,7 +39,7 @@
   <div class="cards">
     <div class="card" style="--delay: 0ms">
       <span class="card-label">{m.stats_rounds()}</span>
-      <span class="card-value">{today?.rounds ?? '—'}</span>
+      <span class="card-value">{today ? fmtRounds(today.rounds) : '—'}</span>
     </div>
     <div class="card-divider"></div>
     <div class="card" style="--delay: 60ms">
@@ -94,6 +99,30 @@
       </svg>
     </div>
   </div>
+
+  <!-- Task breakdown -->
+  {#if today && today.task_breakdown && today.task_breakdown.length > 0}
+    <div class="section tasks-section">
+      <div class="section-header">
+        <span class="section-title">{m.stats_tasks_breakdown()}</span>
+      </div>
+
+      <div class="tasks-list">
+        {#each today.task_breakdown as task}
+          {@const mins = Math.round(task.focus_secs / 60)}
+          <div class="task-row">
+            <div class="task-meta">
+              <span class="task-name">{task.task_name}</span>
+              <span class="task-rounds"
+                >{fmtRounds(task.rounds)} {m.stats_rounds().toLowerCase()}</span
+              >
+            </div>
+            <span class="task-time">{fmtTime(mins)}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -235,5 +264,52 @@
   .baseline {
     stroke: var(--color-separator);
     stroke-width: 1;
+  }
+
+  /* ── Task breakdown ────────────────────────────────────────── */
+  .tasks-section {
+    border-top: 1px solid var(--color-separator);
+    padding: 16px 24px 24px;
+    gap: 12px;
+  }
+
+  .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+    border-radius: 6px;
+    border: 1px solid color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  }
+
+  .task-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .task-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
+
+  .task-rounds {
+    font-size: 0.72rem;
+    color: var(--color-foreground-darker);
+  }
+
+  .task-time {
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-focus-round);
   }
 </style>

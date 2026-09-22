@@ -12,7 +12,7 @@
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import type { CustomAudioInfo } from '$lib/types';
   import * as m from '$paraglide/messages.js';
-  import { warn, error as logError } from '@tauri-apps/plugin-log';
+  import { logWarn as warn, logError } from '$lib/utils/log';
 
   type CueKey = keyof CustomAudioInfo;
 

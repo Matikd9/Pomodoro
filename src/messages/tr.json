@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "Etkinleştirildiğinde, ilerleme yayı dolmak yerine sıfıra doğru geri sayar.",
   "tooltip_auto_start_work": "Bir mola bittiğinde sonraki çalışma turunu otomatik olarak başlat.",
   "tooltip_auto_start_break": "Bir çalışma turu tamamlandığında molayı otomatik olarak başlat.",
-  "tooltip_websocket": "Yayın yerleşimleri gibi harici entegrasyonlar için yerel bir WebSocket sunucusu etkinleştirir. Varsayılan olarak devre dışıdır."
+  "tooltip_websocket": "Yayın katmanları gibi harici entegrasyonlar için yerel bir WebSocket sunucusunu etkinleştirir. Varsayılan olarak devre dışıdır.",
+  "timer_today_focus": "Bugün: {time}",
+  "tooltip_today_focus": "Bugün biriken toplam odaklanma süresi.",
+  "task_label": "Görev",
+  "task_create_placeholder": "Yeni görev…",
+  "task_create_button": "Oluştur",
+  "task_change_tooltip": "Odaklanma görevini değiştir veya oluştur",
+  "stats_tasks_breakdown": "Göreve göre süre"
 }

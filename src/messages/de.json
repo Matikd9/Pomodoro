@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "Wenn aktiviert, zählt der Fortschrittsbogen auf null herunter, anstatt sich zu füllen.",
   "tooltip_auto_start_work": "Die nächste Arbeitsrunde automatisch starten, wenn eine Pause endet.",
   "tooltip_auto_start_break": "Die Pause automatisch starten, wenn eine Arbeitsrunde endet.",
-  "tooltip_websocket": "Aktiviert einen lokalen WebSocket-Server für externe Integrationen wie Stream-Overlays. Standardmäßig deaktiviert."
+  "tooltip_websocket": "Aktiviert einen lokalen WebSocket-Server für externe Integrationen wie Stream-Overlays. Standardmäßig deaktiviert.",
+  "timer_today_focus": "Heute: {time}",
+  "tooltip_today_focus": "Heute insgesamt gesammelte Fokuszeit.",
+  "task_label": "Aufgabe",
+  "task_create_placeholder": "Neue Aufgabe…",
+  "task_create_button": "Erstellen",
+  "task_change_tooltip": "Fokus-Aufgabe ändern oder erstellen",
+  "stats_tasks_breakdown": "Zeit nach Aufgabe"
 }

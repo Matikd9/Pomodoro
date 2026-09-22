@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { openUrl } from '@tauri-apps/plugin-opener';
-
-  import { info, warn, error as logError } from '@tauri-apps/plugin-log';
+  import { openExternalUrl } from '$lib/utils/platform';
+  import { logInfo as info, logWarn as warn, logError } from '$lib/utils/log';
   import { openLogDir, appVersion, checkUpdate, installUpdate } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
   import type { UpdateInfo } from '$lib/types';
@@ -97,7 +96,7 @@
   </div>
 
   <div class="links">
-    <button class="link-row" onclick={() => openUrl(releaseUrl)}>
+    <button class="link-row" onclick={() => openExternalUrl(releaseUrl)}>
       <span>{m.about_release_notes()}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <path
@@ -109,7 +108,7 @@
         />
       </svg>
     </button>
-    <button class="link-row" onclick={() => openUrl(REPO)}>
+    <button class="link-row" onclick={() => openExternalUrl(REPO)}>
       <span>{m.about_source_code()}</span>
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
         <path

@@ -1,10 +1,14 @@
 <script lang="ts">
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import { isMac } from '$lib/utils/platform';
+  import { isMac, isTauri } from '$lib/utils/platform';
   import * as m from '$paraglide/messages.js';
 
   function close() {
-    getCurrentWebviewWindow().close();
+    if (isTauri) {
+      getCurrentWebviewWindow().close();
+    } else {
+      window.location.href = '/';
+    }
   }
 </script>
 

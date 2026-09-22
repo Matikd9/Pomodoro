@@ -3,7 +3,7 @@
   import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { setWindowVisibility } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
-  import { isMac } from '$lib/utils/platform';
+  import { isMac, isTauri } from '$lib/utils/platform';
   import Tooltip from './Tooltip.svelte';
   import * as m from '$paraglide/messages.js';
 
@@ -21,6 +21,7 @@
   }
 
   onMount(() => {
+    if (!isTauri) return;
     const win = getCurrentWebviewWindow();
     win.isMaximized().then((v) => {
       maximized = v;
@@ -44,6 +45,10 @@
   });
 
   async function openSettings() {
+    if (!isTauri) {
+      window.location.href = '/settings';
+      return;
+    }
     const existing = await WebviewWindow.getByLabel('settings');
     if (existing) {
       await existing.show();
@@ -67,6 +72,10 @@
   }
 
   async function openStats() {
+    if (!isTauri) {
+      window.location.href = '/stats';
+      return;
+    }
     const existing = await WebviewWindow.getByLabel('stats');
     if (existing) {
       await existing.show();
@@ -88,6 +97,7 @@
   }
 
   async function minimize() {
+    if (!isTauri) return;
     suppressRestoredTitlebarState();
     if ($settings.min_to_tray) {
       await setWindowVisibility(false);
@@ -97,10 +107,12 @@
   }
 
   function toggleMaximize() {
+    if (!isTauri) return;
     getCurrentWebviewWindow().toggleMaximize();
   }
 
   async function close() {
+    if (!isTauri) return;
     suppressRestoredTitlebarState();
     await getCurrentWebviewWindow().close();
   }
@@ -191,7 +203,7 @@
     {#if isMac}
       {@render statsBtn()}
       {@render settingsBtn()}
-    {:else}
+    {:else if isTauri}
       <button class="btn-icon" onclick={minimize} aria-label="Minimize">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line
@@ -246,11 +258,7 @@
           </svg>
         {/if}
       </button>
-      <button
-        class="btn-icon close"
-        onclick={close}
-        aria-label="Close"
-      >
+      <button class="btn-icon close" onclick={close} aria-label="Close">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line
             x1="1"

@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "Quando ativado, o arco de progresso faz contagem regressiva até zero em vez de se preencher.",
   "tooltip_auto_start_work": "Iniciar automaticamente a próxima rodada de trabalho quando uma pausa terminar.",
   "tooltip_auto_start_break": "Iniciar automaticamente a pausa quando uma rodada de trabalho terminar.",
-  "tooltip_websocket": "Ativa um servidor WebSocket local para integrações externas como overlays de streaming. Desativado por padrão."
+  "tooltip_websocket": "Habilita um servidor WebSocket local para integrações externas como overlays de transmissão. Desabilitado por padrão.",
+  "timer_today_focus": "Hoje: {time}",
+  "tooltip_today_focus": "Tempo total de foco acumulado hoje.",
+  "task_label": "Tarefa",
+  "task_create_placeholder": "Nova tarefa…",
+  "task_create_button": "Criar",
+  "task_change_tooltip": "Alterar ou criar tarefa de foco",
+  "stats_tasks_breakdown": "Tempo por tarefa"
 }

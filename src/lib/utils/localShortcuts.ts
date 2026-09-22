@@ -3,6 +3,7 @@
 // The handler is created via a factory so it can read reactive state by closure.
 
 import { timerToggle, timerRestartRound, timerSkip, setSetting } from '$lib/ipc';
+import { isTauri } from '$lib/utils/platform';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { Settings } from '$lib/types';
 
@@ -94,7 +95,15 @@ export function createLocalShortcutHandler(state: LocalShortcutState): (e: Keybo
       e.preventDefault();
       const next = !state.getFullscreen();
       state.setFullscreen(next);
-      getCurrentWebviewWindow().setFullscreen(next);
+      if (isTauri) {
+        getCurrentWebviewWindow().setFullscreen(next);
+      } else if (typeof document !== 'undefined') {
+        if (next && document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else if (!next && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
     }
   };
 }

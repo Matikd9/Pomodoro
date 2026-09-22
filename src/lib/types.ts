@@ -14,6 +14,8 @@ export interface TimerState {
   work_round_number: number; // current work round (1-based)
   work_rounds_total: number; // total work rounds before long break
   session_work_count: number; // monotonic focus round count since last reset
+  today_focus_secs: number; // focus seconds accumulated today
+  current_task: string; // active task name (e.g. "General", "Math")
 }
 
 /** Mirrors Rust `Settings` struct returned by `settings_get`. */
@@ -83,11 +85,18 @@ export interface Theme {
 // Stats types — mirror Rust structs in commands.rs / queries.rs
 // ---------------------------------------------------------------------------
 
+export interface TaskStat {
+  task_name: string;
+  focus_secs: number;
+  rounds: number;
+}
+
 export interface DailyStats {
   rounds: number;
   focus_mins: number;
   completion_rate: number | null; // null when no sessions started today
   by_hour: number[]; // 24 entries, index = hour of day
+  task_breakdown: TaskStat[];
 }
 
 export interface DayStat {
@@ -110,6 +119,7 @@ export interface DetailedStats {
   today: DailyStats;
   week: DayStat[];
   streak: StreakInfo;
+  week_tasks: TaskStat[];
 }
 
 /** Returned by stats_get_heatmap — heatmap entries + lifetime totals. */

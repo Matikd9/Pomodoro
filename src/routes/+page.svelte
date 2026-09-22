@@ -7,11 +7,11 @@
   import { settings } from '$lib/stores/settings';
   import { applyTheme } from '$lib/stores/theme';
   import { resolveThemeName } from '$lib/utils/theme';
-  import { isMac } from '$lib/utils/platform';
+  import { isMac, isTauri } from '$lib/utils/platform';
   import { setLocale } from '$lib/locale.svelte.js';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import { info, error as logError } from '@tauri-apps/plugin-log';
+  import { logInfo as info, logError } from '$lib/utils/log';
   import { createLocalShortcutHandler } from '$lib/utils/localShortcuts';
 
   // Local shortcut state — volume and fullscreen tracked separately so the
@@ -59,6 +59,7 @@
   });
 
   async function startResize(direction: string) {
+    if (!isTauri) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await getCurrentWebviewWindow().startResizeDragging(direction as any);
   }
@@ -101,7 +102,9 @@
         const osDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const active = themes.find((t) => t.name === resolveThemeName(s, osDark)) ?? themes[0];
         if (active) applyTheme(active);
-        await getCurrentWebviewWindow().show();
+        if (isTauri) {
+          await getCurrentWebviewWindow().show();
+        }
         await info(`[main] initialized, theme=${active?.name ?? 'none'}`);
       } catch (e) {
         await logError(`[main] initialization failed: ${e}`);

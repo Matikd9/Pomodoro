@@ -1,0 +1,14 @@
+services:
+  pomotroid:
+    build: .
+    container_name: pomotroid
+    restart: unless-stopped
+    ports:
+      - "8085:8085"
+    environment:
+      - PORT=8085
+      - DATA_DIR=/data
+      - STATIC_DIR=/app/dist
+      - RUST_LOG=info
+    volumes:
+      - ./data:/data

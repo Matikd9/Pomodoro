@@ -40,11 +40,17 @@
     count: number;
     level: 0 | 1 | 2 | 3;
     dimmed: boolean; // future or out-of-year
+    fraction: number; // 0 to 1 horizontal fill proportion
   }
 
   interface MonthLabel {
     x: number;
     label: string;
+  }
+
+  function fmtRounds(r: number | undefined | null): string {
+    if (r === undefined || r === null) return '—';
+    return Number(r.toFixed(2)).toString();
   }
 
   function buildGridForYear(
@@ -82,7 +88,8 @@
         const count = byDate.get(dateStr) ?? 0;
         const dimmed = dt > today || dt.getFullYear() !== year;
         const level = dimmed || count === 0 ? 0 : count <= 3 ? 1 : count <= 7 ? 2 : 3;
-        col.push({ date: dateStr, count, level: level as 0 | 1 | 2 | 3, dimmed });
+        const fraction = dimmed || count === 0 ? 0 : count < 1 ? count : 1;
+        col.push({ date: dateStr, count, level: level as 0 | 1 | 2 | 3, dimmed, fraction });
       }
 
       // Month label when the first cell of the week belongs to the selected year and starts a new month
@@ -126,7 +133,7 @@
     const text =
       cell.count === 0
         ? `${cell.date}: ${m.stats_no_sessions_today().toLowerCase()}`
-        : `${cell.date}: ${cell.count} ${cell.count === 1 ? m.stats_rounds().toLowerCase().replace(/s$/, '') : m.stats_rounds().toLowerCase()}`;
+        : `${cell.date}: ${fmtRounds(cell.count)} ${m.stats_rounds().toLowerCase()}`;
     tooltip = { x: cellRect.left + CELL / 2, y: cellRect.top - 8, text };
   }
 
@@ -238,22 +245,35 @@
             {#each col as cell, d}
               {@const cx = LEFT_OFFSET + w * STRIDE}
               {@const cy = MONTH_LABEL_H + d * STRIDE}
+              <!-- Base background cell (level 0 if partial, or level color if full/empty) -->
               <rect
                 x={cx}
                 y={cy}
                 width={CELL}
                 height={CELL}
                 rx="2"
-                style="fill: {LEVEL_FILL[cell.level]}"
+                style="fill: {cell.fraction < 1 ? LEVEL_FILL[0] : LEVEL_FILL[cell.level]}"
                 class="cell"
                 class:cell-dimmed={cell.dimmed}
                 role="img"
-                aria-label="{cell.date}: {cell.count} {m.stats_rounds().toLowerCase()}"
+                aria-label="{cell.date}: {fmtRounds(cell.count)} {m.stats_rounds().toLowerCase()}"
                 onmouseenter={(e) => showTooltip(e, cell)}
                 onmouseleave={() => {
                   tooltip = null;
                 }}
               />
+              <!-- Partial horizontal fill from left to right when 0 < fraction < 1 -->
+              {#if !cell.dimmed && cell.fraction > 0 && cell.fraction < 1}
+                {@const fillW = Math.max(2, Math.round(CELL * cell.fraction))}
+                <rect
+                  x={cx}
+                  y={cy}
+                  width={fillW}
+                  height={CELL}
+                  rx="2"
+                  style="fill: {LEVEL_FILL[cell.level]}; pointer-events: none;"
+                />
+              {/if}
             {/each}
           {/each}
         </svg>
@@ -289,7 +309,7 @@
     <div class="totals">
       <div class="total-card" style="--delay: 0ms">
         <span class="total-label">{m.stats_total_rounds()}</span>
-        <span class="total-value">{heatmap.total_rounds.toLocaleString()}</span>
+        <span class="total-value">{fmtRounds(heatmap.total_rounds)}</span>
       </div>
       <div class="total-divider"></div>
       <div class="total-card" style="--delay: 60ms">

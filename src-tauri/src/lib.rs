@@ -29,7 +29,8 @@ use commands::{
     sessions_clear,
     stats_get_detailed, stats_get_heatmap,
     themes_list,
-    timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle,
+    timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
+    tasks_list, tasks_create,
     window_set_visibility,
 };
 
@@ -373,6 +374,10 @@ pub fn run() {
             timer_restart_round,
             timer_skip,
             timer_get_state,
+            timer_set_task,
+            // Tasks
+            tasks_list,
+            tasks_create,
             // Settings
             settings_get,
             settings_set,

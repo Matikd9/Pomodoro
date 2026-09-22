@@ -54,6 +54,13 @@ pub fn timer_get_state(timer: State<'_, TimerController>) -> TimerSnapshot {
     timer.get_snapshot()
 }
 
+/// Set the active task/subject for subsequent work sessions and return new snapshot.
+#[tauri::command]
+pub fn timer_set_task(task: String, timer: State<'_, TimerController>) -> TimerSnapshot {
+    timer.set_task(task);
+    timer.get_snapshot()
+}
+
 // ---------------------------------------------------------------------------
 // CMD-02 — Settings commands
 // ---------------------------------------------------------------------------
@@ -351,7 +358,25 @@ pub fn stats_get_detailed(db: State<'_, DbState>) -> Result<DetailedStats, Strin
         log::error!("[stats] failed to query streak: {e}");
         e.to_string()
     })?;
-    Ok(DetailedStats { today, week, streak })
+    let week_tasks = queries::get_weekly_task_breakdown(&conn).map_err(|e| {
+        log::error!("[stats] failed to query weekly task breakdown: {e}");
+        e.to_string()
+    })?;
+    Ok(DetailedStats { today, week, streak, week_tasks })
+}
+
+/// Returns the list of all defined tasks (with 'General' first).
+#[tauri::command]
+pub fn tasks_list(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_tasks(&conn).map_err(|e| e.to_string())
+}
+
+/// Creates a new task and returns the updated task list.
+#[tauri::command]
+pub fn tasks_create(name: String, db: State<'_, DbState>) -> Result<Vec<String>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::create_task(&conn, &name).map_err(|e| e.to_string())
 }
 
 /// Heatmap data + lifetime totals for the All Time tab.
@@ -372,7 +397,7 @@ pub fn stats_get_heatmap(db: State<'_, DbState>) -> Result<HeatmapStats, String>
     })?;
     Ok(HeatmapStats {
         entries,
-        total_rounds: raw.completed_work_sessions as u32,
+        total_rounds: raw.completed_work_sessions,
         total_hours: (raw.total_work_secs / 3600) as u32,
         longest_streak: streak.longest,
     })
@@ -736,13 +761,14 @@ pub struct DetailedStats {
     pub today: queries::DailyStats,
     pub week: Vec<queries::DayStat>,
     pub streak: queries::StreakInfo,
+    pub week_tasks: Vec<queries::TaskStat>,
 }
 
 /// Payload for the All Time tab.
 #[derive(serde::Serialize)]
 pub struct HeatmapStats {
     pub entries: Vec<queries::HeatmapEntry>,
-    pub total_rounds: u32,
+    pub total_rounds: f32,
     pub total_hours: u32,
     pub longest_streak: u32,
 }

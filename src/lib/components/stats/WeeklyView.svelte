@@ -1,9 +1,17 @@
 <script lang="ts">
-  import type { DayStat, StreakInfo } from '$lib/types';
+  import type { DayStat, StreakInfo, TaskStat } from '$lib/types';
   import * as m from '$paraglide/messages.js';
   import { getLocale } from '$paraglide/runtime.js';
 
-  let { week, streak }: { week: DayStat[] | null; streak: StreakInfo | null } = $props();
+  let {
+    week,
+    streak,
+    tasks,
+  }: {
+    week: DayStat[] | null;
+    streak: StreakInfo | null;
+    tasks: TaskStat[] | null;
+  } = $props();
 
   const CHART_H = 140; // px, max bar height
   const BAR_W = 52; // px per bar
@@ -39,6 +47,18 @@
     });
   });
 
+  function fmtRounds(r: number | undefined | null): string {
+    if (r === undefined || r === null) return '—';
+    return Number(r.toFixed(2)).toString();
+  }
+
+  function fmtTime(mins: number): string {
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+
   const maxRounds = $derived(Math.max(1, ...days.map((d) => d.rounds)));
   const totalWeek = $derived(days.reduce((s, d) => s + d.rounds, 0));
   const hasData = $derived(totalWeek > 0);
@@ -49,7 +69,7 @@
   <div class="summary">
     <div class="summary-item">
       <span class="summary-label">{m.stats_this_week()}</span>
-      <span class="summary-value">{totalWeek} {m.stats_rounds().toLowerCase()}</span>
+      <span class="summary-value">{fmtRounds(totalWeek)} {m.stats_rounds().toLowerCase()}</span>
     </div>
     {#if streak}
       <div class="summary-item streak">
@@ -104,7 +124,7 @@
             <!-- Round count label above bar -->
             {#if day.rounds > 0}
               <text x={x + BAR_W / 2} y={y - 5} text-anchor="middle" class="count-label"
-                >{day.rounds}</text
+                >{fmtRounds(day.rounds)}</text
               >
             {/if}
 
@@ -119,11 +139,35 @@
           {/each}
 
           <!-- Baseline -->
-          <line x1="0" y1={CHART_H} x2={CHART_W} y2={CHART_H} class="baseline" />
+          <line x1="0" y1={CHART_H} x2={CHART_W} y2={CHART_W} class="baseline" />
         </svg>
       </div>
     {/if}
   </div>
+
+  <!-- Task breakdown -->
+  {#if tasks && tasks.length > 0}
+    <div class="tasks-section">
+      <div class="tasks-header">
+        <span class="tasks-title">{m.stats_tasks_breakdown()}</span>
+      </div>
+
+      <div class="tasks-list">
+        {#each tasks as task}
+          {@const mins = Math.round(task.focus_secs / 60)}
+          <div class="task-row">
+            <div class="task-meta">
+              <span class="task-name">{task.task_name}</span>
+              <span class="task-rounds"
+                >{fmtRounds(task.rounds)} {m.stats_rounds().toLowerCase()}</span
+              >
+            </div>
+            <span class="task-time">{fmtTime(mins)}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -259,5 +303,68 @@
   .baseline {
     stroke: var(--color-separator);
     stroke-width: 1;
+  }
+
+  /* ── Task breakdown ────────────────────────────────────────── */
+  .tasks-section {
+    border-top: 1px solid var(--color-separator);
+    padding: 16px 32px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tasks-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
+  .tasks-title {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-foreground-darker);
+  }
+
+  .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .task-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: color-mix(in oklch, var(--color-foreground) 4%, transparent);
+    border-radius: 6px;
+    border: 1px solid color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  }
+
+  .task-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .task-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
+
+  .task-rounds {
+    font-size: 0.72rem;
+    color: var(--color-foreground-darker);
+  }
+
+  .task-time {
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-focus-round);
   }
 </style>

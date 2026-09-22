@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "启用后，进度弧从满倒计时至零，而非从零填充。",
   "tooltip_auto_start_work": "休息结束后自动开始下一个工作轮次。",
   "tooltip_auto_start_break": "工作轮次结束后自动开始休息。",
-  "tooltip_websocket": "启用本地 WebSocket 服务器，用于直播覆盖层等外部集成。默认禁用。"
+  "tooltip_websocket": "启用用于外部集成（如直播浮窗）的本地 WebSocket 服务器。默认已禁用。",
+  "timer_today_focus": "今天: {time}",
+  "tooltip_today_focus": "今天累计的总专注时间。",
+  "task_label": "任务",
+  "task_create_placeholder": "新任务…",
+  "task_create_button": "创建",
+  "task_change_tooltip": "更改或创建专注任务",
+  "stats_tasks_breakdown": "按任务统计时间"
 }

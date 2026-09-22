@@ -38,6 +38,10 @@ pub struct TimerSnapshot {
     /// Monotonically-increasing focus round count since last reset. Used as a
     /// session counter when long breaks are disabled.
     pub session_work_count: u32,
+    /// Total focus work seconds accumulated today from completed and partial sessions.
+    pub today_focus_secs: u32,
+    /// Currently selected task/subject (e.g. "General", "Math").
+    pub current_task: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +65,8 @@ pub struct TimerController {
     /// Kept alive so TrayState is not dropped if lib.rs forgets its copy.
     #[allow(dead_code)]
     tray: Arc<TrayState>,
+    db: DbState,
+    current_task: Arc<Mutex<String>>,
 }
 
 impl TimerController {
@@ -84,12 +90,26 @@ impl TimerController {
             is_running: false,
         }));
 
+        let initial_task = if let Ok(conn) = db.lock() {
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'last_task_name'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap_or_else(|_| "General".to_string())
+        } else {
+            "General".to_string()
+        };
+        let current_task = Arc::new(Mutex::new(initial_task));
+
         // Clone handles for the event-listener thread.
         let seq_thread = Arc::clone(&sequence);
         let settings_thread = Arc::clone(&settings_arc);
         let shared_thread = Arc::clone(&shared);
         let engine_thread = engine.clone();
         let tray_thread = Arc::clone(&tray);
+        let db_thread = Arc::clone(&db);
+        let current_task_thread = Arc::clone(&current_task);
 
         std::thread::Builder::new()
             .name("timer-events".to_string())
@@ -103,7 +123,8 @@ impl TimerController {
                         shared: shared_thread,
                         engine: engine_thread,
                         tray: tray_thread,
-                        db,
+                        db: db_thread,
+                        current_task: current_task_thread,
                     },
                 );
             })
@@ -115,6 +136,8 @@ impl TimerController {
             settings: settings_arc,
             shared,
             tray,
+            db,
+            current_task,
         }
     }
 
@@ -179,20 +202,24 @@ impl TimerController {
     // --- Query ---
 
     pub fn get_snapshot(&self) -> TimerSnapshot {
-        let seq = self.sequence.lock().unwrap();
-        let settings = self.settings.lock().unwrap();
-        let shared = self.shared.lock().unwrap();
+        build_snapshot(&self.sequence, &self.settings, &self.shared, &self.db, &self.current_task)
+    }
 
-        TimerSnapshot {
-            round_type: seq.current_round.as_str().to_string(),
-            previous_round_type: seq.previous_round.map(|r| r.as_str().to_string()).unwrap_or_default(),
-            elapsed_secs: shared.elapsed_secs,
-            total_secs: seq.current_duration_secs(&settings),
-            is_running: shared.is_running,
-            is_paused: !shared.is_running && shared.elapsed_secs > 0,
-            work_round_number: seq.work_round_number,
-            work_rounds_total: seq.work_rounds_total,
-            session_work_count: seq.session_work_count,
+    /// Sets the active task/subject, saving it as the default/last-used task in settings and DB.
+    pub fn set_task(&self, task: String) {
+        let clean = if task.trim().is_empty() {
+            "General".to_string()
+        } else {
+            task.trim().to_string()
+        };
+        log::info!("[timer] set task={clean}");
+        *self.current_task.lock().unwrap() = clean.clone();
+        if let Ok(conn) = self.db.lock() {
+            let _ = conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_task_name', ?1)",
+                rusqlite::params![clean],
+            );
+            let _ = queries::create_task(&conn, &clean);
         }
     }
 
@@ -229,6 +256,7 @@ struct ListenContext {
     engine: EngineHandle,
     tray: Arc<TrayState>,
     db: DbState,
+    current_task: Arc<Mutex<String>>,
 }
 
 fn listen_events(
@@ -236,11 +264,12 @@ fn listen_events(
     event_rx: std::sync::mpsc::Receiver<TimerEvent>,
     ctx: ListenContext,
 ) {
-    let ListenContext { sequence, settings, shared, engine, tray, db } = ctx;
+    let ListenContext { sequence, settings, shared, engine, tray, db, current_task } = ctx;
     // Track last tray progress to throttle redraws to ≥ 1% delta.
     let mut last_tray_progress: f32 = -1.0;
-    // Active session row ID for recording (None = not started yet).
+    // Active session row ID for recording (None = not started or < 2 min threshold).
     let mut current_session_id: Option<i64> = None;
+    const MIN_RECORD_SECS: u32 = 120;
 
     while let Ok(event) = event_rx.recv() {
         match event {
@@ -265,18 +294,28 @@ fn listen_events(
                     serde_json::json!({ "elapsed_secs": elapsed_secs, "total_secs": total_secs }),
                 );
 
-                // --- Session recording: start on first tick of a new round ---
-                if elapsed_secs == 1 && current_session_id.is_none() {
-                    let rt = sequence.lock().unwrap().current_round.as_str().to_string();
-                    let total = {
-                        let seq = sequence.lock().unwrap();
-                        let s = settings.lock().unwrap();
-                        seq.current_duration_secs(&s)
-                    };
-                    if let Ok(conn) = db.lock() {
-                        match queries::insert_session(&conn, &rt, total) {
-                            Ok(id) => current_session_id = Some(id),
-                            Err(e) => log::error!("[timer] failed to record session: {e}"),
+                // --- Session recording: only for Work rounds, start at MIN_RECORD_SECS (2 mins) ---
+                let is_work = sequence.lock().unwrap().current_round == RoundType::Work;
+                if is_work {
+                    if elapsed_secs == MIN_RECORD_SECS && current_session_id.is_none() {
+                        let total = {
+                            let seq = sequence.lock().unwrap();
+                            let s = settings.lock().unwrap();
+                            seq.current_duration_secs(&s)
+                        };
+                        let task = current_task.lock().unwrap().clone();
+                        if let Ok(conn) = db.lock() {
+                            match queries::insert_session(&conn, "work", elapsed_secs, total, &task) {
+                                Ok(id) => current_session_id = Some(id),
+                                Err(e) => log::error!("[timer] failed to record session: {e}"),
+                            }
+                        }
+                    } else if elapsed_secs > MIN_RECORD_SECS && elapsed_secs % 15 == 0 {
+                        // Persist progress every 15s to withstand sudden app closes or power loss.
+                        if let Some(session_id) = current_session_id {
+                            if let Ok(conn) = db.lock() {
+                                let _ = queries::update_session_progress(&conn, session_id, elapsed_secs);
+                            }
                         }
                     }
                 }
@@ -302,17 +341,42 @@ fn listen_events(
             }
 
             TimerEvent::Complete { skipped: was_skipped } => {
-                let completed_round = sequence.lock().unwrap().current_round.as_str().to_string();
+                let completed_round = sequence.lock().unwrap().current_round;
                 log::info!(
-                    "[timer] round complete type={completed_round} skipped={was_skipped}"
+                    "[timer] round complete type={} skipped={was_skipped}",
+                    completed_round.as_str()
                 );
 
-                // --- Session recording: mark the completed round ---
-                if let Some(session_id) = current_session_id.take() {
-                    if let Ok(conn) = db.lock() {
-                        let _ = queries::complete_session(&conn, session_id, !was_skipped);
+                // --- Session recording: complete work session if it reached >= 2 mins ---
+                if completed_round == RoundType::Work {
+                    let total = {
+                        let seq = sequence.lock().unwrap();
+                        let s = settings.lock().unwrap();
+                        seq.current_duration_secs(&s)
+                    };
+                    if !was_skipped {
+                        if let Some(session_id) = current_session_id.take() {
+                            if let Ok(conn) = db.lock() {
+                                let _ = queries::complete_session(&conn, session_id, total, true);
+                            }
+                        } else if total >= MIN_RECORD_SECS {
+                            let task = current_task.lock().unwrap().clone();
+                            if let Ok(conn) = db.lock() {
+                                if let Ok(id) = queries::insert_session(&conn, "work", total, total, &task) {
+                                    let _ = queries::complete_session(&conn, id, total, true);
+                                }
+                            }
+                        }
+                    } else {
+                        let elapsed = shared.lock().unwrap().elapsed_secs;
+                        if let Some(session_id) = current_session_id.take() {
+                            if let Ok(conn) = db.lock() {
+                                let _ = queries::complete_session(&conn, session_id, elapsed, false);
+                            }
+                        }
                     }
                 }
+                current_session_id = None;
 
                 // Advance sequence.
                 let (next_round, next_duration, auto_start_work, auto_start_break) = {
@@ -336,8 +400,8 @@ fn listen_events(
                 });
 
                 // Emit round-change with the new snapshot.
-                let snapshot = build_snapshot(&sequence, &settings, &shared);
-                let _ = app.emit("timer:round-change", snapshot);
+                let snapshot = build_snapshot(&sequence, &settings, &shared, &db, &current_task);
+                let _ = app.emit("timer:round-change", &snapshot);
 
                 // Desktop notifications are dispatched by the frontend via the
                 // notification_show command after receiving the timer:round-change
@@ -368,18 +432,13 @@ fn listen_events(
                 }
 
                 // Update tray to reflect new round type and reset progress.
-                // Use -1.0 (same as initialisation and Reset) so the very
-                // first tick of the new round always passes the ≥1% threshold,
-                // regardless of how long the round is.  Using 0.0 here caused
-                // a ≥15-second blank period before the arc started animating.
                 let rt = sequence.lock().unwrap().current_round.as_str().to_string();
                 tray::update_icon(&tray, &rt, false, 0.0);
                 last_tray_progress = -1.0;
 
                 // Broadcast round-change to any connected WebSocket clients.
                 if let Some(ws) = app.try_state::<Arc<WsState>>() {
-                    let snap = build_snapshot(&sequence, &settings, &shared);
-                    websocket::broadcast_round_change(&ws, snap);
+                    websocket::broadcast_round_change(&ws, snapshot);
                 }
 
                 // Auto-start if configured.
@@ -401,6 +460,13 @@ fn listen_events(
             TimerEvent::Paused { elapsed_secs } => {
                 log::info!("[timer] paused elapsed={elapsed_secs}s");
                 shared.lock().unwrap().is_running = false;
+
+                if let Some(session_id) = current_session_id {
+                    if let Ok(conn) = db.lock() {
+                        let _ = queries::update_session_progress(&conn, session_id, elapsed_secs);
+                    }
+                }
+
                 let _ = app.emit("timer:paused", serde_json::json!({ "elapsed_secs": elapsed_secs }));
                 if let Some(ws) = app.try_state::<Arc<WsState>>() {
                     websocket::broadcast_paused(&ws, elapsed_secs);
@@ -440,8 +506,17 @@ fn listen_events(
             }
 
             TimerEvent::Reset => {
-                log::debug!("[timer] idle");
-                // Abandon the active session (leave DB row as-is).
+                log::debug!("[timer] reset / idle");
+                // Save current work session if it reached the minimum threshold.
+                let is_work = sequence.lock().unwrap().current_round == RoundType::Work;
+                let elapsed = shared.lock().unwrap().elapsed_secs;
+                if is_work {
+                    if let Some(session_id) = current_session_id.take() {
+                        if let Ok(conn) = db.lock() {
+                            let _ = queries::complete_session(&conn, session_id, elapsed, false);
+                        }
+                    }
+                }
                 current_session_id = None;
 
                 {
@@ -449,17 +524,12 @@ fn listen_events(
                     s.elapsed_secs = 0;
                     s.is_running = false;
                 }
-                let snapshot = build_snapshot(&sequence, &settings, &shared);
-                let _ = app.emit("timer:reset", snapshot);
+                let snapshot = build_snapshot(&sequence, &settings, &shared, &db, &current_task);
+                let _ = app.emit("timer:reset", &snapshot);
                 if let Some(ws) = app.try_state::<Arc<WsState>>() {
                     websocket::broadcast_reset(&ws);
                 }
 
-                // Prime the engine with the current round's duration so the
-                // next Start uses the correct (possibly settings-updated)
-                // total. Using the lighter-weight command here avoids a race
-                // where a fast user click on Start is immediately clobbered by
-                // a late follow-up duration update.
                 let duration = {
                     let seq = sequence.lock().unwrap();
                     let s = settings.lock().unwrap();
@@ -500,10 +570,19 @@ fn build_snapshot(
     sequence: &Arc<Mutex<SequenceState>>,
     settings: &Arc<Mutex<Settings>>,
     shared: &Arc<Mutex<TimerShared>>,
+    db: &DbState,
+    current_task: &Arc<Mutex<String>>,
 ) -> TimerSnapshot {
     let seq = sequence.lock().unwrap();
     let s = settings.lock().unwrap();
     let sh = shared.lock().unwrap();
+    let task = current_task.lock().unwrap().clone();
+
+    let today_focus_secs = if let Ok(conn) = db.lock() {
+        queries::get_today_focus_secs(&conn).unwrap_or(0)
+    } else {
+        0
+    };
 
     TimerSnapshot {
         round_type: seq.current_round.as_str().to_string(),
@@ -515,5 +594,7 @@ fn build_snapshot(
         work_round_number: seq.work_round_number,
         work_rounds_total: seq.work_rounds_total,
         session_work_count: seq.session_work_count,
+        today_focus_secs,
+        current_task: task,
     }
 }

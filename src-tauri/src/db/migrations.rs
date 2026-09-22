@@ -77,6 +77,7 @@ const MIGRATION_5: &str = "
 ";
 
 /// Seeds the seven local shortcut key bindings for users upgrading from a version
+/// Seeds the seven local shortcut key bindings for users upgrading from a version
 /// that did not have this feature. These shortcuts are handled entirely by the frontend
 /// (keydown listeners) and require no Rust-side dispatch logic.
 const MIGRATION_6: &str = "
@@ -88,6 +89,29 @@ const MIGRATION_6: &str = "
     INSERT OR IGNORE INTO settings (key, value) VALUES ('local_shortcut_mute', 'm');
     INSERT OR IGNORE INTO settings (key, value) VALUES ('local_shortcut_fullscreen', 'F11');
     INSERT INTO schema_version VALUES (6);
+";
+
+/// Adds `target_secs` to `sessions` to track target duration alongside actual duration,
+/// backfilling existing sessions, and cleans up incomplete abandoned sessions with < 2 mins.
+const MIGRATION_7: &str = "
+    ALTER TABLE sessions ADD COLUMN target_secs INTEGER NOT NULL DEFAULT 1500;
+    UPDATE sessions SET target_secs = duration_secs WHERE duration_secs > 0;
+    DELETE FROM sessions WHERE completed = 0 AND (ended_at IS NULL OR duration_secs < 120);
+    INSERT INTO schema_version VALUES (7);
+";
+
+/// Adds `task_name` to `sessions` to track task/subject, creates `tasks` table with 'General',
+/// and stores 'last_task_name' in settings.
+const MIGRATION_8: &str = "
+    ALTER TABLE sessions ADD COLUMN task_name TEXT NOT NULL DEFAULT 'General';
+    CREATE TABLE IF NOT EXISTS tasks (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL
+    );
+    INSERT OR IGNORE INTO tasks (name, created_at) VALUES ('General', strftime('%s', 'now'));
+    INSERT OR IGNORE INTO settings (key, value) VALUES ('last_task_name', 'General');
+    INSERT INTO schema_version VALUES (8);
 ";
 
 /// Apply any pending migrations. Each migration is wrapped in a transaction
@@ -131,6 +155,18 @@ pub fn run(conn: &Connection) -> Result<()> {
         log::info!("[db/migrations] MIGRATION_6 complete");
     }
 
+    if version < 7 {
+        log::info!("[db/migrations] applying MIGRATION_7: add target_secs and clean sessions");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_7} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_7 complete");
+    }
+
+    if version < 8 {
+        log::info!("[db/migrations] applying MIGRATION_8: add task_name to sessions and create tasks table");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_8} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_8 complete");
+    }
+
     Ok(())
 }
 
@@ -166,14 +202,14 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 6);
+        assert_eq!(v, 8);
     }
 
     #[test]
     fn all_tables_created() {
         let conn = Connection::open_in_memory().unwrap();
         run(&conn).unwrap();
-        for table in &["settings", "sessions", "custom_themes", "schema_version"] {
+        for table in &["settings", "sessions", "custom_themes", "schema_version", "tasks"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",

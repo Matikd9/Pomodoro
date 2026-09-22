@@ -149,5 +149,12 @@
   "tooltip_dial_countdown": "When enabled, the progress arc counts down to zero instead of filling up.",
   "tooltip_auto_start_work": "Automatically start the next work round when a break ends.",
   "tooltip_auto_start_break": "Automatically start the break when a work round completes.",
-  "tooltip_websocket": "Enables a local WebSocket server for external integrations such as stream overlays. Disabled by default."
+  "tooltip_websocket": "Enables a local WebSocket server for external integrations such as stream overlays. Disabled by default.",
+  "timer_today_focus": "Today: {time}",
+  "tooltip_today_focus": "Total focus time accumulated today.",
+  "task_label": "Task",
+  "task_create_placeholder": "New task or subject…",
+  "task_create_button": "Create",
+  "task_change_tooltip": "Change or create focus task",
+  "stats_tasks_breakdown": "Time by task"
 }
