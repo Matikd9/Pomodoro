@@ -89,4 +89,18 @@
     color: var(--color-background);
     background: var(--color-focus-round);
   }
+
+  @media (max-width: 600px), (pointer: coarse) {
+    .titlebar {
+      margin-top: max(env(safe-area-inset-top, 0px), 14px);
+      height: 48px;
+    }
+
+    .btn-close {
+      width: 44px;
+      height: 44px;
+      right: 12px;
+      border-radius: 8px;
+    }
+  }
 </style>

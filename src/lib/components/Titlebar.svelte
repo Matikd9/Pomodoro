@@ -336,4 +336,24 @@
     color: var(--color-background);
     background: var(--color-focus-round);
   }
+
+  /* Safe area and touch targets for mobile screens */
+  @media (max-width: 600px), (pointer: coarse) {
+    .titlebar {
+      margin-top: max(env(safe-area-inset-top, 0px), 16px);
+      padding: 6px 16px 8px;
+      height: 48px;
+    }
+
+    .btn-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+    }
+
+    .btn-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
 </style>
