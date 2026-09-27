@@ -13,4 +13,4 @@ services:
       - TZ=America/Santiago
     volumes:
       - ./data:/data
-      - /etc/localtime:/etc/localtime:ro:z
+      - /etc/localtime:/etc/localtime:ro
