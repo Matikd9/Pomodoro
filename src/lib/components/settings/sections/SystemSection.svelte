@@ -34,9 +34,12 @@
     remoteLoading = true;
     remoteStatus = 'Comprobando conexión con el servidor...';
     remoteStatusError = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
       const target = trimmed.replace(/\/+$/, '');
-      const res = await fetch(`${target}/api/state`, { signal: AbortSignal.timeout(3500) });
+      const res = await fetch(`${target}/api/state`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       if (res.ok) {
         setRemoteServerUrl(target);
         remoteStatus = '¡Conexión establecida! Recargando...';
@@ -45,9 +48,11 @@
         remoteStatusError = true;
         remoteStatus = `El servidor respondió con código ${res.status}. Verifica que Pomotroid Server esté iniciado.`;
       }
-    } catch {
+    } catch (err) {
+      clearTimeout(timeoutId);
       remoteStatusError = true;
-      remoteStatus = `No se pudo conectar a ${trimmed}. Asegúrate de que la IP y el puerto 8085 sean correctos y Tailscale esté activo.`;
+      const detail = err instanceof Error ? err.message : String(err);
+      remoteStatus = `No se pudo conectar a ${trimmed} (${detail}). Asegúrate de que la IP y el puerto 8085 sean correctos y Tailscale esté activo.`;
     } finally {
       remoteLoading = false;
     }

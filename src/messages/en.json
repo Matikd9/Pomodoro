@@ -156,5 +156,13 @@
   "task_create_placeholder": "New task or subject…",
   "task_create_button": "Create",
   "task_change_tooltip": "Change or create focus task",
+  "task_complete_button": "Mark as completed",
+  "task_uncomplete_button": "Restore task",
+  "task_delete_button": "Delete task",
+  "task_completed_section": "Completed",
+  "obsidian_export_button": "Export to Obsidian",
+  "obsidian_export_success": "Report saved to Obsidian",
+  "obsidian_export_no_data": "No sessions this week",
+  "obsidian_export_tooltip": "Generate and save weekly report to your Obsidian vault",
   "stats_tasks_breakdown": "Time by task"
 }

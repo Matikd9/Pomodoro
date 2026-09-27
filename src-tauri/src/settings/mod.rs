@@ -427,7 +427,12 @@ mod tests {
         // Simulate a pre-migration DB: schema version 1, `*_mins` keys present.
         let conn = Connection::open_in_memory().unwrap();
         // Run only migration 1 manually to get v1 state.
-        conn.execute_batch("BEGIN; CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL); INSERT INTO schema_version VALUES (1); COMMIT;").unwrap();
+        conn.execute_batch("BEGIN;
+            CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER, round_type TEXT NOT NULL, duration_secs INTEGER NOT NULL, completed INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO schema_version VALUES (1);
+            COMMIT;").unwrap();
         conn.execute("INSERT INTO settings (key, value) VALUES ('time_work_mins', '30')", []).unwrap();
         conn.execute("INSERT INTO settings (key, value) VALUES ('time_short_break_mins', '7')", []).unwrap();
         conn.execute("INSERT INTO settings (key, value) VALUES ('time_long_break_mins', '20')", []).unwrap();

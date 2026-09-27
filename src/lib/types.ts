@@ -129,3 +129,16 @@ export interface HeatmapStats {
   total_hours: number;
   longest_streak: number;
 }
+
+export interface TaskItem {
+  name: string;
+  completed: boolean;
+}
+
+export interface ObsidianExportResult {
+  success: boolean;
+  exported: boolean;
+  file_path: string | null;
+  message: string;
+}
+

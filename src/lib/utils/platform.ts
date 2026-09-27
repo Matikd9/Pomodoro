@@ -1,7 +1,9 @@
-/** True when running inside the Tauri desktop app. */
 export const isTauri =
   typeof window !== 'undefined' &&
-  ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+  ('__TAURI_INTERNALS__' in window ||
+    '__TAURI__' in window ||
+    window.location.hostname === 'tauri.localhost' ||
+    window.location.protocol === 'tauri:');
 
 /** True when running on macOS inside the Tauri desktop app. */
 export const isMac = isTauri && /Macintosh|Mac OS X/.test(navigator.userAgent);

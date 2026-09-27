@@ -27,6 +27,9 @@ pub mod migrations;
 #[path = "../../src-tauri/src/db/queries.rs"]
 pub mod queries;
 
+#[path = "../../src-tauri/src/obsidian.rs"]
+pub mod obsidian;
+
 #[path = "../../src-tauri/src/settings/defaults.rs"]
 pub mod defaults;
 
@@ -431,6 +434,9 @@ async fn main() {
         .route("/api/timer/restart", post(api_timer_restart))
         .route("/api/timer/task", post(api_timer_set_task))
         .route("/api/tasks", get(api_tasks_list).post(api_tasks_create))
+        .route("/api/tasks/complete", post(api_tasks_complete))
+        .route("/api/tasks/delete", post(api_tasks_delete))
+        .route("/api/export/obsidian", post(api_export_obsidian))
         .route("/api/stats/detailed", get(api_stats_detailed))
         .route("/api/stats/heatmap", get(api_stats_heatmap))
         .route("/api/settings", get(api_settings_get).post(api_settings_set))
@@ -535,7 +541,7 @@ async fn api_timer_set_task(
     Json(ctl.set_task(req.task))
 }
 
-async fn api_tasks_list(State(ctl): State<Arc<ServerController>>) -> Result<Json<Vec<String>>, StatusCode> {
+async fn api_tasks_list(State(ctl): State<Arc<ServerController>>) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::get_tasks(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(tasks))
@@ -549,10 +555,56 @@ struct CreateTaskReq {
 async fn api_tasks_create(
     State(ctl): State<Arc<ServerController>>,
     Json(req): Json<CreateTaskReq>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::create_task(&conn, &req.name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(tasks))
+}
+
+#[derive(Deserialize)]
+struct ToggleTaskReq {
+    name: String,
+    completed: bool,
+}
+
+async fn api_tasks_complete(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<ToggleTaskReq>,
+) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tasks = queries::toggle_task_complete(&conn, &req.name, req.completed)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(tasks))
+}
+
+#[derive(Deserialize)]
+struct DeleteTaskReq {
+    name: String,
+}
+
+async fn api_tasks_delete(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<DeleteTaskReq>,
+) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let tasks = queries::delete_task(&conn, &req.name)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(tasks))
+}
+
+#[derive(Deserialize)]
+struct ObsidianExportReq {
+    week_offset: Option<i32>,
+}
+
+async fn api_export_obsidian(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<ObsidianExportReq>,
+) -> Result<Json<obsidian::ObsidianExportResult>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let result = obsidian::export_weekly_report(&conn, req.week_offset.unwrap_or(0), None)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(result))
 }
 
 #[derive(Serialize)]

@@ -2,6 +2,7 @@ pub mod audio;
 pub mod commands;
 pub mod db;
 pub mod notifications;
+pub mod obsidian;
 pub mod settings;
 pub mod shortcuts;
 pub mod themes;
@@ -30,7 +31,8 @@ use commands::{
     stats_get_detailed, stats_get_heatmap,
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
-    tasks_list, tasks_create,
+    tasks_list, tasks_create, tasks_toggle_complete, tasks_delete,
+    obsidian_export_weekly,
     window_set_visibility,
 };
 
@@ -88,6 +90,10 @@ pub fn run() {
             {
                 let conn = db.lock().unwrap();
                 settings::seed_defaults(&conn).expect("failed to seed default settings");
+                let _ = conn.execute(
+                    "UPDATE settings SET value = 'false' WHERE key = 'min_to_tray_on_close';",
+                    [],
+                );
             }
             app.manage(db.clone());
 
@@ -196,6 +202,10 @@ pub fn run() {
             // still hidden at this point so there is no visible flash.
             #[cfg(not(target_os = "macos"))]
             let _ = main_window.set_decorations(false);
+
+            let _ = main_window.show();
+            let _ = main_window.unminimize();
+            let _ = main_window.set_focus();
 
             // Enable macOS window tiling/arrangement.
             //
@@ -325,22 +335,24 @@ pub fn run() {
             main_window.on_window_event(move |event| {
                 match event {
                     tauri::WindowEvent::CloseRequested { api, .. } => {
-                        let hide = db_for_close
+                        let settings_opt = db_for_close
                             .lock()
                             .ok()
-                            .and_then(|conn| settings::load(&conn).ok())
+                            .and_then(|conn| settings::load(&conn).ok());
+                        let has_tray = settings_opt
+                            .as_ref()
+                            .map(|s| s.tray_icon_enabled || s.min_to_tray)
+                            .unwrap_or(false);
+                        let hide = settings_opt
+                            .as_ref()
                             .map(|s| s.min_to_tray_on_close)
                             .unwrap_or(false);
-                        if hide {
+                        if hide && has_tray {
                             api.prevent_close();
                             let _ = win_for_close.hide();
                         } else {
-                            // Main window is truly closing — close child windows if open.
-                            for label in ["settings", "stats"] {
-                                if let Some(win) = app_for_close.get_webview_window(label) {
-                                    let _ = win.close();
-                                }
-                            }
+                            // Main window is closing — exit app cleanly so no zombie process locks WebView2
+                            app_for_close.exit(0);
                         }
                     }
                     tauri::WindowEvent::Moved(pos) => {
@@ -378,6 +390,10 @@ pub fn run() {
             // Tasks
             tasks_list,
             tasks_create,
+            tasks_toggle_complete,
+            tasks_delete,
+            // Obsidian
+            obsidian_export_weekly,
             // Settings
             settings_get,
             settings_set,

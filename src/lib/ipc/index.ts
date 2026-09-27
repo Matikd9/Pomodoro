@@ -13,6 +13,8 @@ import type {
   DetailedStats,
   HeatmapStats,
   UpdateInfo,
+  TaskItem,
+  ObsidianExportResult,
 } from '$lib/types';
 
 // --- Remote Server Configuration ---
@@ -25,11 +27,16 @@ export function getRemoteServerUrl(): string | null {
   if (configured) {
     return configured.replace(/\/+$/, '');
   }
-  // When running in a standard web browser (e.g. mobile phone), use current origin
-  if (!isTauri) {
-    return window.location.origin;
+  // If running in Tauri or serving from tauri origin, never use origin as remote server
+  if (
+    isTauri ||
+    window.location.hostname === 'tauri.localhost' ||
+    window.location.protocol === 'tauri:'
+  ) {
+    return null;
   }
-  return null;
+  // When running in a standard web browser (e.g. mobile phone), use current origin
+  return window.location.origin;
 }
 
 export function setRemoteServerUrl(url: string | null): void {
@@ -228,28 +235,139 @@ export const timerSetTask = async (task: string) => {
 
 // --- Tasks commands ---
 
-export const tasksList = async () => {
-  if (isRemoteMode()) {
-    return remoteFetch<string[]>('/api/tasks');
+export function normalizeTask(item: unknown): TaskItem {
+  if (typeof item === 'string') {
+    return { name: item, completed: false };
   }
-  return invoke<string[]>('tasks_list');
+  if (item && typeof item === 'object') {
+    const obj = item as Record<string, unknown>;
+    const name = typeof obj.name === 'string' ? obj.name : String(obj.name ?? '');
+    return {
+      name: name || 'General',
+      completed: Boolean(obj.completed),
+    };
+  }
+  return { name: String(item ?? 'General'), completed: false };
+}
+
+export const tasksList = async (): Promise<TaskItem[]> => {
+  let raw: unknown[];
+  if (isRemoteMode()) {
+    try {
+      raw = await remoteFetch<unknown[]>('/api/tasks');
+    } catch (e) {
+      console.warn('Failed to fetch tasks from remote:', e);
+      if (isTauri) {
+        raw = await invoke<unknown[]>('tasks_list');
+      } else {
+        throw e;
+      }
+    }
+  } else {
+    raw = await invoke<unknown[]>('tasks_list');
+  }
+  const list = (Array.isArray(raw) ? raw : []).map(normalizeTask);
+  if (!list.some((t) => t.name === 'General')) {
+    list.unshift({ name: 'General', completed: false });
+  }
+  return list;
 };
 
-export const tasksCreate = async (name: string) => {
+export const tasksCreate = async (name: string): Promise<TaskItem[]> => {
+  let raw: unknown[];
   if (isRemoteMode()) {
-    return remoteFetch<string[]>('/api/tasks', {
+    try {
+      raw = await remoteFetch<unknown[]>('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+    } catch (e) {
+      if (isTauri) {
+        raw = await invoke<unknown[]>('tasks_create', { name });
+      } else {
+        throw e;
+      }
+    }
+  } else {
+    raw = await invoke<unknown[]>('tasks_create', { name });
+  }
+  return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+};
+
+export const tasksToggleComplete = async (name: string, completed: boolean): Promise<TaskItem[]> => {
+  if (isRemoteMode()) {
+    try {
+      const raw = await remoteFetch<unknown[]>('/api/tasks/complete', {
+        method: 'POST',
+        body: JSON.stringify({ name, completed }),
+      });
+      return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+    } catch (e) {
+      console.warn('Remote server may not support /api/tasks/complete yet:', e);
+      if (isTauri) {
+        const raw = await invoke<unknown[]>('tasks_toggle_complete', { name, completed });
+        return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+      }
+      return tasksList();
+    }
+  }
+  const raw = await invoke<unknown[]>('tasks_toggle_complete', { name, completed });
+  return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+};
+
+export const tasksDelete = async (name: string): Promise<TaskItem[]> => {
+  if (isRemoteMode()) {
+    try {
+      const raw = await remoteFetch<unknown[]>('/api/tasks/delete', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+    } catch (e) {
+      console.warn('Remote server may not support /api/tasks/delete yet:', e);
+      if (isTauri) {
+        const raw = await invoke<unknown[]>('tasks_delete', { name });
+        return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+      }
+      return tasksList();
+    }
+  }
+  const raw = await invoke<unknown[]>('tasks_delete', { name });
+  return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+};
+
+// --- Obsidian commands ---
+
+export const obsidianExportWeekly = async (weekOffset = 0): Promise<ObsidianExportResult> => {
+  if (isTauri) {
+    try {
+      return await invoke<ObsidianExportResult>('obsidian_export_weekly', { weekOffset });
+    } catch (e) {
+      console.error('Local obsidian export failed, trying remote if available:', e);
+    }
+  }
+  if (isRemoteMode()) {
+    return remoteFetch<ObsidianExportResult>('/api/export/obsidian', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ week_offset: weekOffset }),
     });
   }
-  return invoke<string[]>('tasks_create', { name });
+  return invoke<ObsidianExportResult>('obsidian_export_weekly', { weekOffset });
 };
 
 // --- Settings commands ---
 
 export const getSettings = async () => {
   if (isRemoteMode()) {
-    return remoteFetch<Settings>('/api/settings');
+    try {
+      return await remoteFetch<Settings>('/api/settings');
+    } catch (err) {
+      console.warn('Failed to fetch settings from remote, falling back to local:', err);
+      if (isTauri) {
+        return invoke<Settings>('settings_get');
+      }
+      throw err;
+    }
   }
   return invoke<Settings>('settings_get');
 };
@@ -281,7 +399,15 @@ export const reloadShortcuts = async () => {
 
 export const getThemes = async () => {
   if (isRemoteMode()) {
-    return remoteFetch<Theme[]>('/api/themes');
+    try {
+      return await remoteFetch<Theme[]>('/api/themes');
+    } catch (err) {
+      console.warn('Failed to fetch themes from remote, falling back to local:', err);
+      if (isTauri) {
+        return invoke<Theme[]>('themes_list');
+      }
+      throw err;
+    }
   }
   return invoke<Theme[]>('themes_list');
 };

@@ -22,11 +22,12 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "backgroundColor": "#2F384B",
-        "visible": false
+        "visible": true,
+        "shadow": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' http: https: ws: wss: ipc: tauri:; style-src 'self' 'unsafe-inline'; media-src 'self'"
     }
   },
   "plugins": {

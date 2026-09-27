@@ -10,5 +10,7 @@ services:
       - DATA_DIR=/data
       - STATIC_DIR=/app/dist
       - RUST_LOG=info
+      - TZ=America/Santiago
     volumes:
       - ./data:/data
+      - /etc/localtime:/etc/localtime:ro:z

@@ -1,22 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { timerState } from '$lib/stores/timer';
-  import { timerSetTask, tasksList, tasksCreate } from '$lib/ipc';
+  import { timerSetTask, tasksList, tasksCreate, tasksToggleComplete, tasksDelete, normalizeTask } from '$lib/ipc';
+  import type { TaskItem } from '$lib/types';
   import * as m from '$paraglide/messages.js';
 
   let isOpen = $state(false);
-  let tasks = $state<string[]>(['General']);
+  let tasks = $state<TaskItem[]>([{ name: 'General', completed: false }]);
   let newTaskInput = $state('');
   let popoverEl = $state<HTMLElement | null>(null);
   let inputEl = $state<HTMLInputElement | null>(null);
+  let showCompleted = $state(false);
 
   const currentTask = $derived($timerState.current_task || 'General');
+  const pendingTasks = $derived(tasks.filter((t) => !t.completed));
+  const completedTasks = $derived(tasks.filter((t) => t.completed));
 
   async function loadTasks() {
     try {
       const list = await tasksList();
       if (list && list.length > 0) {
-        tasks = list;
+        tasks = list.map(normalizeTask);
       }
     } catch (e) {
       console.error('Failed to load tasks:', e);
@@ -62,11 +66,47 @@
     if (!trimmed) return;
     try {
       const updated = await tasksCreate(trimmed);
-      tasks = updated;
+      tasks = updated.map(normalizeTask);
       newTaskInput = '';
       await selectTask(trimmed);
     } catch (e) {
       console.error('Failed to create task:', e);
+    }
+  }
+
+  async function handleCompleteTask(taskName: string, e?: MouseEvent) {
+    e?.stopPropagation();
+    try {
+      const updated = await tasksToggleComplete(taskName, true);
+      tasks = updated.map(normalizeTask);
+      if (currentTask === taskName) {
+        await selectTask('General');
+      }
+    } catch (err) {
+      console.error('Failed to complete task:', err);
+    }
+  }
+
+  async function handleRestoreTask(taskName: string, e?: MouseEvent) {
+    e?.stopPropagation();
+    try {
+      const updated = await tasksToggleComplete(taskName, false);
+      tasks = updated.map(normalizeTask);
+    } catch (err) {
+      console.error('Failed to restore task:', err);
+    }
+  }
+
+  async function handleDeleteTask(taskName: string, e?: MouseEvent) {
+    e?.stopPropagation();
+    try {
+      const updated = await tasksDelete(taskName);
+      tasks = updated.map(normalizeTask);
+      if (currentTask === taskName) {
+        await selectTask('General');
+      }
+    } catch (err) {
+      console.error('Failed to delete task:', err);
     }
   }
 
@@ -88,44 +128,69 @@
 </script>
 
 <div class="task-selector-container" bind:this={popoverEl}>
-  <!-- Task Badge / Button -->
-  <button
-    class="task-badge"
-    class:active={isOpen}
-    onclick={toggleOpen}
-    title={m.task_change_tooltip()}
-    aria-label={m.task_change_tooltip()}
-  >
-    <svg
-      class="tag-icon"
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
+  <div class="badge-wrapper">
+    <!-- Task Badge / Button -->
+    <button
+      class="task-badge"
+      class:active={isOpen}
+      onclick={toggleOpen}
+      title={m.task_change_tooltip()}
+      aria-label={m.task_change_tooltip()}
     >
-      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-      <line x1="7" y1="7" x2="7.01" y2="7" />
-    </svg>
-    <span class="task-name">{currentTask}</span>
-    <svg
-      class="chevron"
-      class:rotated={isOpen}
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2.5"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  </button>
+      <svg
+        class="tag-icon"
+        width="12"
+        height="12"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+        <line x1="7" y1="7" x2="7.01" y2="7" />
+      </svg>
+      <span class="task-name">{currentTask}</span>
+      <svg
+        class="chevron"
+        class:rotated={isOpen}
+        width="10"
+        height="10"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </button>
+
+    <!-- Quick Complete Button on main screen when non-General task is active -->
+    {#if currentTask !== 'General'}
+      <button
+        class="btn-quick-complete"
+        onclick={(e) => handleCompleteTask(currentTask, e)}
+        title={m.task_complete_button()}
+        aria-label={m.task_complete_button()}
+      >
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </button>
+    {/if}
+  </div>
 
   <!-- Dropdown popover -->
   {#if isOpen}
@@ -161,32 +226,122 @@
         </button>
       </div>
 
+      <!-- Pending Tasks List -->
       <div class="tasks-list">
-        {#each tasks as task}
-          <button
-            class="task-item"
-            class:selected={task === currentTask}
-            onclick={() => selectTask(task)}
-          >
-            <span class="task-item-name">{task}</span>
-            {#if task === currentTask}
-              <svg
-                class="check-icon"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+        {#each pendingTasks as task, idx (task.name || idx)}
+          <div class="task-row" class:selected={task.name === currentTask}>
+            <button
+              class="task-item-btn"
+              onclick={() => selectTask(task.name)}
+              title={task.name}
+            >
+              <span class="task-item-name">{task.name}</span>
+              {#if task.name === currentTask}
+                <span class="active-dot"></span>
+              {/if}
+            </button>
+            {#if task.name !== 'General'}
+              <button
+                class="task-action-btn complete-btn"
+                onclick={(e) => handleCompleteTask(task.name, e)}
+                title={m.task_complete_button()}
+                aria-label={m.task_complete_button()}
               >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </button>
             {/if}
-          </button>
+          </div>
         {/each}
       </div>
+
+      <!-- Completed Tasks Collapsible Section -->
+      {#if completedTasks.length > 0}
+        <div class="completed-section">
+          <button
+            class="completed-header"
+            onclick={() => (showCompleted = !showCompleted)}
+          >
+            <svg
+              class="chevron-small"
+              class:rotated={showCompleted}
+              width="9"
+              height="9"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>{m.task_completed_section()} ({completedTasks.length})</span>
+          </button>
+
+          {#if showCompleted}
+            <div class="completed-list">
+              {#each completedTasks as task, idx (task.name || idx)}
+                <div class="task-row completed-row">
+                  <span class="task-item-name strike" title={task.name}>{task.name}</span>
+                  <div class="completed-actions">
+                    <button
+                      class="task-action-btn restore-btn"
+                      onclick={(e) => handleRestoreTask(task.name, e)}
+                      title={m.task_uncomplete_button()}
+                      aria-label={m.task_uncomplete_button()}
+                    >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <polyline points="1 4 1 10 7 10" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
+                    </button>
+                    <button
+                      class="task-action-btn delete-btn"
+                      onclick={(e) => handleDeleteTask(task.name, e)}
+                      title={m.task_delete_button()}
+                      aria-label={m.task_delete_button()}
+                    >
+                      <svg
+                        width="11"
+                        height="11"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -201,6 +356,12 @@
     margin-bottom: 2px;
   }
 
+  .badge-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
   .task-badge {
     display: inline-flex;
     align-items: center;
@@ -213,7 +374,7 @@
     font-size: 0.72rem;
     font-weight: 500;
     cursor: pointer;
-    max-width: 190px;
+    max-width: 175px;
     transition: all var(--transition-snappy);
     user-select: none;
   }
@@ -222,6 +383,27 @@
   .task-badge.active {
     background: color-mix(in oklch, var(--color-foreground) 14%, transparent);
     border-color: color-mix(in oklch, var(--color-foreground) 24%, transparent);
+  }
+
+  .btn-quick-complete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
+    border: 1px solid color-mix(in oklch, var(--color-focus-round) 30%, transparent);
+    color: var(--color-focus-round);
+    cursor: pointer;
+    transition: all var(--transition-snappy);
+    padding: 0;
+  }
+
+  .btn-quick-complete:hover {
+    background: var(--color-focus-round);
+    color: #fff;
+    transform: scale(1.08);
   }
 
   .tag-icon {
@@ -248,7 +430,7 @@
   .task-popover {
     position: absolute;
     top: calc(100% + 6px);
-    width: 220px;
+    width: 230px;
     background: var(--color-background-light);
     border: 1px solid color-mix(in oklch, var(--color-foreground) 16%, transparent);
     border-radius: 8px;
@@ -330,30 +512,42 @@
     gap: 2px;
   }
 
-  .task-item {
+  .task-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 5px 8px;
+    padding: 2px 4px;
     border-radius: 4px;
-    background: transparent;
-    border: none;
-    color: var(--color-foreground);
-    font-size: 0.73rem;
-    text-align: left;
-    cursor: pointer;
     transition: background var(--transition-snappy);
   }
 
-  .task-item:hover {
-    background: color-mix(in oklch, var(--color-foreground) 8%, transparent);
+  .task-row:hover {
+    background: color-mix(in oklch, var(--color-foreground) 6%, transparent);
   }
 
-  .task-item.selected {
+  .task-row.selected {
+    background: color-mix(in oklch, var(--color-focus-round) 12%, transparent);
+  }
+
+  .task-item-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: transparent;
+    border: none;
+    color: var(--color-foreground);
+    font-size: 0.74rem;
+    text-align: left;
+    cursor: pointer;
+    padding: 3px 4px;
+    min-width: 0;
+  }
+
+  .task-row.selected .task-item-btn {
     font-weight: 600;
     color: var(--color-focus-round);
-    background: color-mix(in oklch, var(--color-focus-round) 12%, transparent);
   }
 
   .task-item-name {
@@ -362,8 +556,115 @@
     white-space: nowrap;
   }
 
-  .check-icon {
+  .active-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-focus-round);
     flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  .task-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--color-foreground-darker);
+    opacity: 0.7;
+    transition: all var(--transition-snappy);
+    flex-shrink: 0;
+  }
+
+  .task-action-btn:hover {
+    opacity: 1;
+  }
+
+  .complete-btn:hover {
     color: var(--color-focus-round);
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
+  }
+
+  .restore-btn:hover {
+    color: var(--color-focus-round);
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
+  }
+
+  .delete-btn:hover {
+    color: #e05252;
+    background: color-mix(in oklch, #e05252 15%, transparent);
+  }
+
+  /* Completed Collapsible Section */
+  .completed-section {
+    border-top: 1px solid color-mix(in oklch, var(--color-foreground) 10%, transparent);
+    padding-top: 4px;
+    margin-top: 2px;
+  }
+
+  .completed-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--color-foreground-darker);
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    padding: 3px 4px;
+    border-radius: 3px;
+    user-select: none;
+  }
+
+  .completed-header:hover {
+    color: var(--color-foreground);
+  }
+
+  .chevron-small {
+    transition: transform 0.15s ease;
+  }
+
+  .chevron-small.rotated {
+    transform: rotate(90deg);
+  }
+
+  .completed-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 100px;
+    overflow-y: auto;
+    gap: 2px;
+    margin-top: 2px;
+  }
+
+  .completed-row {
+    padding: 2px 4px;
+    opacity: 0.7;
+  }
+
+  .completed-row:hover {
+    opacity: 1;
+  }
+
+  .strike {
+    text-decoration: line-through;
+    font-size: 0.72rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .completed-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
   }
 </style>

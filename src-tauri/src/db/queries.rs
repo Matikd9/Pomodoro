@@ -352,30 +352,67 @@ pub fn get_weekly_task_breakdown(conn: &Connection) -> Result<Vec<TaskStat>> {
     Ok(list)
 }
 
-/// Returns the list of tasks, ensuring 'General' is first, followed by others alphabetically.
-pub fn get_tasks(conn: &Connection) -> Result<Vec<String>> {
+#[derive(Debug, Serialize, serde::Deserialize, Clone, PartialEq)]
+pub struct TaskItem {
+    pub name: String,
+    pub completed: bool,
+}
+
+/// Returns the list of tasks, ensuring pending ones come first ('General' always at top),
+/// followed by completed ones.
+pub fn get_tasks(conn: &Connection) -> Result<Vec<TaskItem>> {
     let mut stmt = conn.prepare(
-        "SELECT name FROM tasks ORDER BY CASE WHEN name = 'General' THEN 0 ELSE 1 END, name COLLATE NOCASE ASC",
+        "SELECT name, completed FROM tasks
+         ORDER BY completed ASC,
+                  CASE WHEN name = 'General' THEN 0 ELSE 1 END,
+                  name COLLATE NOCASE ASC",
     )?;
-    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let rows = stmt.query_map([], |r| {
+        Ok(TaskItem {
+            name: r.get(0)?,
+            completed: r.get::<_, i64>(1)? == 1,
+        })
+    })?;
     let mut tasks = Vec::new();
     for t in rows.flatten() {
         tasks.push(t);
     }
-    if !tasks.iter().any(|t| t == "General") {
-        tasks.insert(0, "General".to_string());
+    if !tasks.iter().any(|t| t.name == "General") {
+        tasks.insert(0, TaskItem { name: "General".to_string(), completed: false });
     }
     Ok(tasks)
 }
 
-/// Creates a new task if it does not already exist, and returns the updated task list.
-pub fn create_task(conn: &Connection, name: &str) -> Result<Vec<String>> {
+/// Creates a new task or unarchives an existing one, and returns the updated task list.
+pub fn create_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
     let clean = name.trim();
     if !clean.is_empty() {
         conn.execute(
-            "INSERT OR IGNORE INTO tasks (name, created_at) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER))",
+            "INSERT INTO tasks (name, created_at, completed) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER), 0)
+             ON CONFLICT(name) DO UPDATE SET completed = 0, completed_at = NULL",
             params![clean],
         )?;
+    }
+    get_tasks(conn)
+}
+
+/// Marks a task as completed or restores it to active. 'General' cannot be completed.
+pub fn toggle_task_complete(conn: &Connection, name: &str, completed: bool) -> Result<Vec<TaskItem>> {
+    let clean = name.trim();
+    if clean != "General" && !clean.is_empty() {
+        conn.execute(
+            "UPDATE tasks SET completed = ?1, completed_at = CASE WHEN ?1 = 1 THEN CAST(strftime('%s', 'now') AS INTEGER) ELSE NULL END WHERE name = ?2",
+            params![if completed { 1 } else { 0 }, clean],
+        )?;
+    }
+    get_tasks(conn)
+}
+
+/// Deletes a task from the database. 'General' cannot be deleted.
+pub fn delete_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
+    let clean = name.trim();
+    if clean != "General" && !clean.is_empty() {
+        conn.execute("DELETE FROM tasks WHERE name = ?1", params![clean])?;
     }
     get_tasks(conn)
 }
@@ -466,7 +503,7 @@ mod tests {
     #[test]
     fn insert_and_complete_session() {
         let conn = setup();
-        let id = insert_session(&conn, "work", 1500, 1500).unwrap();
+        let id = insert_session(&conn, "work", 1500, 1500, "General").unwrap();
         assert!(id > 0);
 
         complete_session(&conn, id, 1500, true).unwrap();
@@ -620,13 +657,25 @@ mod tests {
     fn tasks_management_and_defaults() {
         let conn = setup();
         let tasks = get_tasks(&conn).unwrap();
-        assert_eq!(tasks, vec!["General"]);
+        assert_eq!(tasks, vec![TaskItem { name: "General".to_string(), completed: false }]);
 
         create_task(&conn, "Math").unwrap();
         create_task(&conn, "Physics").unwrap();
         create_task(&conn, "Math").unwrap(); // Duplicate ignored
 
         let updated = get_tasks(&conn).unwrap();
-        assert_eq!(updated, vec!["General", "Math", "Physics"]);
+        assert_eq!(updated.len(), 3);
+        assert_eq!(updated[0].name, "General");
+        assert_eq!(updated[1].name, "Math");
+        assert_eq!(updated[2].name, "Physics");
+
+        // Complete Math
+        let after_complete = toggle_task_complete(&conn, "Math", true).unwrap();
+        let math = after_complete.iter().find(|t| t.name == "Math").unwrap();
+        assert!(math.completed);
+
+        // Delete Math
+        let after_delete = delete_task(&conn, "Math").unwrap();
+        assert!(!after_delete.iter().any(|t| t.name == "Math"));
     }
 }

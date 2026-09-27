@@ -156,5 +156,13 @@
   "task_create_placeholder": "Nueva tarea o materia…",
   "task_create_button": "Crear",
   "task_change_tooltip": "Cambiar o crear tarea de concentración",
+  "task_complete_button": "Marcar como completada",
+  "task_uncomplete_button": "Restaurar tarea",
+  "task_delete_button": "Eliminar tarea",
+  "task_completed_section": "Completadas",
+  "obsidian_export_button": "Exportar a Obsidian",
+  "obsidian_export_success": "Reporte guardado en Obsidian",
+  "obsidian_export_no_data": "Sin sesiones esta semana",
+  "obsidian_export_tooltip": "Generar y guardar reporte semanal en tu bóveda de Obsidian",
   "stats_tasks_breakdown": "Tiempo por tarea"
 }

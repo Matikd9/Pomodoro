@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DayStat, StreakInfo, TaskStat } from '$lib/types';
+  import { obsidianExportWeekly } from '$lib/ipc';
   import * as m from '$paraglide/messages.js';
   import { getLocale } from '$paraglide/runtime.js';
 
@@ -62,6 +63,32 @@
   const maxRounds = $derived(Math.max(1, ...days.map((d) => d.rounds)));
   const totalWeek = $derived(days.reduce((s, d) => s + d.rounds, 0));
   const hasData = $derived(totalWeek > 0);
+
+  let exportStatus = $state<'idle' | 'exporting' | 'success' | 'empty' | 'error'>('idle');
+  let exportMessage = $state<string>('');
+
+  async function handleObsidianExport() {
+    exportStatus = 'exporting';
+    try {
+      const res = await obsidianExportWeekly(0);
+      if (res.exported) {
+        exportStatus = 'success';
+        exportMessage = res.message;
+      } else {
+        exportStatus = 'empty';
+        exportMessage = res.message;
+      }
+      setTimeout(() => {
+        exportStatus = 'idle';
+      }, 4000);
+    } catch (err) {
+      exportStatus = 'error';
+      exportMessage = String(err);
+      setTimeout(() => {
+        exportStatus = 'idle';
+      }, 4000);
+    }
+  }
 </script>
 
 <div class="view">
@@ -84,6 +111,45 @@
         </span>
       </div>
     {/if}
+
+    <div class="summary-actions">
+      <button
+        class="btn-obsidian"
+        onclick={handleObsidianExport}
+        disabled={exportStatus === 'exporting'}
+        title={exportMessage || m.obsidian_export_tooltip()}
+        aria-label={m.obsidian_export_button()}
+      >
+        <svg
+          class="obsidian-icon"
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+          <polyline points="10 9 9 9 8 9" />
+        </svg>
+        {#if exportStatus === 'exporting'}
+          <span>...</span>
+        {:else if exportStatus === 'success'}
+          <span class="export-success">✓ {m.obsidian_export_success()}</span>
+        {:else if exportStatus === 'empty'}
+          <span class="export-warn">⚠ {m.obsidian_export_no_data()}</span>
+        {:else if exportStatus === 'error'}
+          <span class="export-error">✕ Error</span>
+        {:else}
+          <span>{m.obsidian_export_button()}</span>
+        {/if}
+      </button>
+    </div>
   </div>
 
   <!-- Bar chart -->
@@ -181,10 +247,63 @@
   /* ── Summary row ─────────────────────────────────────────── */
   .summary {
     display: flex;
+    align-items: center;
     gap: 32px;
-    padding: 20px 32px 16px;
+    padding: 16px 32px 14px;
     border-bottom: 1px solid var(--color-separator);
     flex-shrink: 0;
+  }
+
+  .summary-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+
+  .btn-obsidian {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--color-focus-round) 12%, transparent);
+    border: 1px solid color-mix(in oklch, var(--color-focus-round) 25%, transparent);
+    color: var(--color-foreground);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-snappy);
+    user-select: none;
+  }
+
+  .btn-obsidian:hover:not(:disabled) {
+    background: color-mix(in oklch, var(--color-focus-round) 22%, transparent);
+    border-color: color-mix(in oklch, var(--color-focus-round) 45%, transparent);
+  }
+
+  .btn-obsidian:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+
+  .obsidian-icon {
+    color: var(--color-focus-round);
+    flex-shrink: 0;
+  }
+
+  .export-success {
+    color: #4ade80;
+    font-weight: 600;
+  }
+
+  .export-warn {
+    color: #fbbf24;
+    font-weight: 500;
+  }
+
+  .export-error {
+    color: #f87171;
+    font-weight: 600;
   }
 
   .summary-item {

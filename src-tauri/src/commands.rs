@@ -367,16 +367,44 @@ pub fn stats_get_detailed(db: State<'_, DbState>) -> Result<DetailedStats, Strin
 
 /// Returns the list of all defined tasks (with 'General' first).
 #[tauri::command]
-pub fn tasks_list(db: State<'_, DbState>) -> Result<Vec<String>, String> {
+pub fn tasks_list(db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::get_tasks(&conn).map_err(|e| e.to_string())
 }
 
 /// Creates a new task and returns the updated task list.
 #[tauri::command]
-pub fn tasks_create(name: String, db: State<'_, DbState>) -> Result<Vec<String>, String> {
+pub fn tasks_create(name: String, db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::create_task(&conn, &name).map_err(|e| e.to_string())
+}
+
+/// Marks a task as completed or restores it, and returns the updated task list.
+#[tauri::command]
+pub fn tasks_toggle_complete(
+    name: String,
+    completed: bool,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::TaskItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())
+}
+
+/// Permanently deletes a task from the database.
+#[tauri::command]
+pub fn tasks_delete(name: String, db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::delete_task(&conn, &name).map_err(|e| e.to_string())
+}
+
+/// Exports the weekly Pomodoro report to Obsidian Markdown.
+#[tauri::command]
+pub fn obsidian_export_weekly(
+    week_offset: Option<i32>,
+    db: State<'_, DbState>,
+) -> Result<crate::obsidian::ObsidianExportResult, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    crate::obsidian::export_weekly_report(&conn, week_offset.unwrap_or(0), None)
 }
 
 /// Heatmap data + lifetime totals for the All Time tab.

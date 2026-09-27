@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import Titlebar from '$lib/components/Titlebar.svelte';
   import Timer from '$lib/components/Timer.svelte';
-  import { getSettings, getThemes, onSettingsChanged, onThemesChanged } from '$lib/ipc';
+  import { getSettings, getThemes, onSettingsChanged, onThemesChanged, obsidianExportWeekly } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
   import { applyTheme } from '$lib/stores/theme';
   import { resolveThemeName } from '$lib/utils/theme';
@@ -88,6 +88,12 @@
 
     (async () => {
       try {
+        if (isTauri) {
+          try {
+            await getCurrentWebviewWindow().show();
+          } catch {}
+        }
+
         // Load settings from backend.
         const s = await getSettings();
         settings.set(s);
@@ -102,13 +108,18 @@
         const osDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const active = themes.find((t) => t.name === resolveThemeName(s, osDark)) ?? themes[0];
         if (active) applyTheme(active);
-        if (isTauri) {
-          await getCurrentWebviewWindow().show();
-        }
         await info(`[main] initialized, theme=${active?.name ?? 'none'}`);
+
+        // Background Obsidian export check (auto-skips if 0 focus time)
+        obsidianExportWeekly(0).catch(() => {});
+        obsidianExportWeekly(-1).catch(() => {});
       } catch (e) {
+        if (isTauri) {
+          try {
+            await getCurrentWebviewWindow().show();
+          } catch {}
+        }
         await logError(`[main] initialization failed: ${e}`);
-        throw e;
       }
 
       // Live OS color scheme changes — re-resolve only in auto mode.
