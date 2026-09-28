@@ -140,5 +140,7 @@ export interface ObsidianExportResult {
   exported: boolean;
   file_path: string | null;
   message: string;
+  filename?: string | null;
+  content?: string | null;
 }
 

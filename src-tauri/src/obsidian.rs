@@ -10,6 +10,10 @@ pub struct ObsidianExportResult {
     pub exported: bool,
     pub file_path: Option<String>,
     pub message: String,
+    #[serde(default)]
+    pub filename: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
 }
 
 pub fn get_obsidian_dir() -> PathBuf {
@@ -152,6 +156,8 @@ pub fn export_weekly_report(
                 bounds.iso_week,
                 build_date_range_label(&bounds.start_date, &bounds.end_date)
             ),
+            filename: None,
+            content: None,
         });
     }
 
@@ -358,7 +364,7 @@ pub fn export_weekly_report(
         md.push('\n');
     }
 
-    std::fs::write(&target_file, md).map_err(|e| {
+    std::fs::write(&target_file, &md).map_err(|e| {
         format!(
             "Error al escribir reporte en {}: {e}",
             target_file.display()
@@ -372,6 +378,8 @@ pub fn export_weekly_report(
         exported: true,
         file_path: Some(target_file.to_string_lossy().to_string()),
         message: format!("Reporte semanal exportado a Obsidian: {}", filename),
+        filename: Some(filename),
+        content: Some(md),
     })
 }
 

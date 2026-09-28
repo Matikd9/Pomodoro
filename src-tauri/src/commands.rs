@@ -407,6 +407,44 @@ pub fn obsidian_export_weekly(
     crate::obsidian::export_weekly_report(&conn, week_offset.unwrap_or(0), None)
 }
 
+/// Saves an Obsidian markdown report to the user's Obsidian directory,
+/// preserving any reflection notes written under "## 📝 Notas y Reflexión Semanal".
+#[tauri::command]
+pub fn obsidian_save_file(filename: String, content: String) -> Result<String, String> {
+    let dir = crate::obsidian::get_obsidian_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let target = dir.join(&filename);
+
+    let final_content = if target.exists() {
+        if let Ok(existing) = std::fs::read_to_string(&target) {
+            if let Some(pos) = existing.find(crate::obsidian::REFLECTION_HEADER) {
+                let existing_reflection = &existing[pos + crate::obsidian::REFLECTION_HEADER.len()..];
+                let trimmed = existing_reflection.trim_start_matches(['\r', '\n']);
+                if !trimmed.trim().is_empty() {
+                    if let Some(new_pos) = content.find(crate::obsidian::REFLECTION_HEADER) {
+                        let header_part = &content[..new_pos + crate::obsidian::REFLECTION_HEADER.len()];
+                        format!("{header_part}\n{trimmed}")
+                    } else {
+                        content
+                    }
+                } else {
+                    content
+                }
+            } else {
+                content
+            }
+        } else {
+            content
+        }
+    } else {
+        content
+    };
+
+    std::fs::write(&target, final_content).map_err(|e| e.to_string())?;
+    log::info!("[obsidian] Report saved locally to {}", target.display());
+    Ok(target.to_string_lossy().to_string())
+}
+
 /// Heatmap data + lifetime totals for the All Time tab.
 #[tauri::command]
 pub fn stats_get_heatmap(db: State<'_, DbState>) -> Result<HeatmapStats, String> {

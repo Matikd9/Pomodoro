@@ -32,7 +32,7 @@ use commands::{
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
     tasks_list, tasks_create, tasks_toggle_complete, tasks_delete,
-    obsidian_export_weekly,
+    obsidian_export_weekly, obsidian_save_file,
     window_set_visibility,
 };
 
@@ -394,6 +394,7 @@ pub fn run() {
             tasks_delete,
             // Obsidian
             obsidian_export_weekly,
+            obsidian_save_file,
             // Settings
             settings_get,
             settings_set,

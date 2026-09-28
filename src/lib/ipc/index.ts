@@ -339,18 +339,30 @@ export const tasksDelete = async (name: string): Promise<TaskItem[]> => {
 // --- Obsidian commands ---
 
 export const obsidianExportWeekly = async (weekOffset = 0): Promise<ObsidianExportResult> => {
-  if (isTauri) {
-    try {
-      return await invoke<ObsidianExportResult>('obsidian_export_weekly', { weekOffset });
-    } catch (e) {
-      console.error('Local obsidian export failed, trying remote if available:', e);
-    }
-  }
   if (isRemoteMode()) {
-    return remoteFetch<ObsidianExportResult>('/api/export/obsidian', {
-      method: 'POST',
-      body: JSON.stringify({ week_offset: weekOffset }),
-    });
+    try {
+      const res = await remoteFetch<ObsidianExportResult>('/api/export/obsidian', {
+        method: 'POST',
+        body: JSON.stringify({ week_offset: weekOffset }),
+      });
+      if (res.exported && res.content && res.filename && isTauri) {
+        const savedPath = await invoke<string>('obsidian_save_file', {
+          filename: res.filename,
+          content: res.content,
+        });
+        return {
+          ...res,
+          file_path: savedPath,
+        };
+      }
+      return res;
+    } catch (e) {
+      console.warn('Remote obsidian export failed, falling back to local:', e);
+      if (isTauri) {
+        return invoke<ObsidianExportResult>('obsidian_export_weekly', { weekOffset });
+      }
+      throw e;
+    }
   }
   return invoke<ObsidianExportResult>('obsidian_export_weekly', { weekOffset });
 };
