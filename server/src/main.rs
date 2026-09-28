@@ -667,11 +667,13 @@ async fn api_settings_set(
     State(ctl): State<Arc<ServerController>>,
     Json(req): Json<SettingSetReq>,
 ) -> Result<Json<Settings>, StatusCode> {
-    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    settings::save_setting(&conn, &req.key, &req.value)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let updated = settings::load(&conn)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let updated = {
+        let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        settings::save_setting(&conn, &req.key, &req.value)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        settings::load(&conn)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
     *ctl.settings.lock().unwrap() = updated.clone();
     ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
 
@@ -692,10 +694,12 @@ async fn api_settings_set(
 async fn api_settings_reset(
     State(ctl): State<Arc<ServerController>>,
 ) -> Result<Json<Settings>, StatusCode> {
-    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    conn.execute("DELETE FROM settings", []).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    settings::seed_defaults(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let updated = settings::load(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let updated = {
+        let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        conn.execute("DELETE FROM settings", []).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        settings::seed_defaults(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        settings::load(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
     *ctl.settings.lock().unwrap() = updated.clone();
     ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
 
