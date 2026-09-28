@@ -277,6 +277,14 @@ pub fn export_weekly_report(
         default_reflection_text().to_string()
     };
 
+    let settings = crate::settings::load(conn).unwrap_or_default();
+    let goal_hours = settings.weekly_goal_hours;
+    let cumplimiento_pct = if goal_hours > 0 {
+        (total_hours / goal_hours as f64) * 100.0
+    } else {
+        0.0
+    };
+
     // Format Markdown content
     let mut md = String::new();
 
@@ -288,6 +296,8 @@ pub fn export_weekly_report(
     md.push_str(&format!("fecha_fin: {}\n", bounds.end_date));
     md.push_str(&format!("tiempo_total_min: {}\n", total_mins));
     md.push_str(&format!("horas_totales: {:.1}\n", total_hours));
+    md.push_str(&format!("meta_semanal_horas: {}\n", goal_hours));
+    md.push_str(&format!("cumplimiento_meta_pct: {:.1}\n", cumplimiento_pct));
     md.push_str(&format!("rondas_totales: {:.1}\n", total_rounds));
     md.push_str(&format!("sesiones_totales: {}\n", total_sessions));
     md.push_str(&format!("dias_activos: {}\n", active_days));
@@ -308,6 +318,10 @@ pub fn export_weekly_report(
         "- **Tiempo Total Enfocado:** {} ({} min)\n",
         format_duration_hm(total_focus_secs as u32),
         total_mins
+    ));
+    md.push_str(&format!(
+        "- **Meta Semanal:** {:.1}h / {}h ({:.1}% cumplido)\n",
+        total_hours, goal_hours, cumplimiento_pct
     ));
     md.push_str(&format!("- **Rondas Completadas:** {:.1}\n", total_rounds));
     let days_label = if active_days == 1 { "día activo" } else { "días activos" };

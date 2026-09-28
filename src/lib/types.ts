@@ -24,6 +24,7 @@ export interface Settings {
   time_short_break_secs: number;
   time_long_break_secs: number;
   long_break_interval: number;
+  weekly_goal_hours: number;
   short_breaks_enabled: boolean;
   long_breaks_enabled: boolean;
   auto_start_work: boolean;
@@ -107,6 +108,8 @@ export interface DayStat {
 export interface HeatmapEntry {
   date: string; // "YYYY-MM-DD"
   count: number;
+  focus_secs?: number;
+  hours?: number;
 }
 
 export interface StreakInfo {

@@ -13,6 +13,7 @@
   "timer_slider_short_break": "Short Break",
   "timer_slider_long_break": "Long Break",
   "timer_slider_rounds": "Rounds until Long Break",
+  "timer_slider_weekly_goal": "Weekly focus goal (hours)",
   "timer_toggle_auto_start_work": "Auto-start Work",
   "timer_toggle_auto_start_work_desc": "Automatically begin the next work session after a break ends.",
   "timer_toggle_auto_start_break": "Auto-start Breaks",
@@ -164,5 +165,15 @@
   "obsidian_export_success": "Report saved to Obsidian",
   "obsidian_export_no_data": "No sessions this week",
   "obsidian_export_tooltip": "Generate and save weekly report to your Obsidian vault",
-  "stats_tasks_breakdown": "Time by task"
+  "stats_tasks_breakdown": "Time by task",
+  "stats_weekly_goal_title": "Weekly goal",
+  "stats_weekly_goal_progress": "{current}h / {goal}h ({pct}%)",
+  "heatmap_level_0": "0 hours",
+  "heatmap_level_1": "Up to 2 hours",
+  "heatmap_level_2": "2 to 4 hours",
+  "heatmap_level_3": "4 to 6 hours",
+  "heatmap_level_4": "More than 6 hours",
+  "heatmap_no_sessions": "No sessions recorded",
+  "heatmap_rounds": "rounds",
+  "heatmap_round": "round"
 }

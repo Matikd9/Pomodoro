@@ -144,11 +144,13 @@ pub struct DayStat {
     pub rounds: f32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone, PartialEq)]
 pub struct HeatmapEntry {
     /// Local calendar date in "YYYY-MM-DD" format.
     pub date: String,
     pub count: f32,
+    pub focus_secs: u32,
+    pub hours: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -246,13 +248,25 @@ pub fn get_weekly_stats(conn: &Connection) -> Result<Vec<DayStat>> {
 pub fn get_heatmap_data(conn: &Connection) -> Result<Vec<HeatmapEntry>> {
     let mut stmt = conn.prepare(
         "SELECT date(started_at, 'unixepoch', 'localtime') as day,
-                COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0) as cnt
+                COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0) as cnt,
+                COALESCE(SUM(duration_secs), 0) as secs
          FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          GROUP BY day
          ORDER BY day",
     )?;
-    let rows = stmt.query_map([], |r| Ok(HeatmapEntry { date: r.get(0)?, count: r.get::<_, f64>(1)? as f32 }))?
+    let rows = stmt
+        .query_map([], |r| {
+            let secs: i64 = r.get(2)?;
+            let focus_secs = secs as u32;
+            let hours = focus_secs as f32 / 3600.0;
+            Ok(HeatmapEntry {
+                date: r.get(0)?,
+                count: r.get::<_, f64>(1)? as f32,
+                focus_secs,
+                hours,
+            })
+        })?
         .collect();
     rows
 }
@@ -591,6 +605,18 @@ mod tests {
         let conn = setup();
         let entries = get_heatmap_data(&conn).unwrap();
         assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn get_heatmap_data_with_sessions() {
+        let conn = setup();
+        let id = insert_session(&conn, "work", 3600, 1500, "Math").unwrap();
+        complete_session(&conn, id, 3600, true).unwrap();
+        let entries = get_heatmap_data(&conn).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].focus_secs, 3600);
+        assert!((entries[0].hours - 1.0).abs() < f32::EPSILON);
+        assert!((entries[0].count - 2.4).abs() < 0.01);
     }
 
     #[test]

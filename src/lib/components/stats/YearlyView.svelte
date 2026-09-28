@@ -38,7 +38,8 @@
   interface GridCell {
     date: string;
     count: number;
-    level: 0 | 1 | 2 | 3;
+    hours: number;
+    level: 0 | 1 | 2 | 3 | 4;
     dimmed: boolean; // future or out-of-year
     fraction: number; // 0 to 1 horizontal fill proportion
   }
@@ -57,7 +58,15 @@
     year: number,
     entries: HeatmapEntry[]
   ): { grid: GridCell[][]; months: MonthLabel[]; weekCount: number } {
-    const byDate = new Map(entries.map((e) => [e.date, e.count]));
+    const byDate = new Map(
+      entries.map((e) => [
+        e.date,
+        {
+          count: e.count,
+          hours: e.hours ?? (e.focus_secs ? e.focus_secs / 3600 : e.count * (25 / 60)),
+        },
+      ])
+    );
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -85,11 +94,31 @@
         const dt = new Date(gridStart);
         dt.setDate(gridStart.getDate() + w * DAYS + d);
         const dateStr = fmtDate(dt);
-        const count = byDate.get(dateStr) ?? 0;
+        const data = byDate.get(dateStr) ?? { count: 0, hours: 0 };
+        const count = data.count;
+        const hours = data.hours;
         const dimmed = dt > today || dt.getFullYear() !== year;
-        const level = dimmed || count === 0 ? 0 : count <= 3 ? 1 : count <= 7 ? 2 : 3;
-        const fraction = dimmed || count === 0 ? 0 : count < 1 ? count : 1;
-        col.push({ date: dateStr, count, level: level as 0 | 1 | 2 | 3, dimmed, fraction });
+
+        let level: 0 | 1 | 2 | 3 | 4 = 0;
+        let fraction = 0;
+
+        if (!dimmed && hours > 0) {
+          if (hours <= 2) {
+            level = 1;
+            fraction = Math.min(1, Math.max(0.1, hours / 2.0));
+          } else if (hours <= 4) {
+            level = 2;
+            fraction = 1;
+          } else if (hours <= 6) {
+            level = 3;
+            fraction = 1;
+          } else {
+            level = 4;
+            fraction = 1;
+          }
+        }
+
+        col.push({ date: dateStr, count, hours, level, dimmed, fraction });
       }
 
       // Month label when the first cell of the week belongs to the selected year and starts a new month
@@ -118,7 +147,13 @@
     return h >= 1000 ? `${(h / 1000).toFixed(1)}k` : String(h);
   }
 
-  const LEVEL_FILL = ['var(--heat-0)', 'var(--heat-1)', 'var(--heat-2)', 'var(--heat-3)'] as const;
+  const LEVEL_FILL = [
+    'var(--heat-0)',
+    'var(--heat-1)',
+    'var(--heat-2)',
+    'var(--heat-3)',
+    'var(--heat-4)',
+  ] as const;
 
   // Tooltip — viewport-fixed so it escapes SVG/overflow clipping.
   let tooltip = $state<{ x: number; y: number; text: string } | null>(null);
@@ -130,10 +165,17 @@
       return;
     }
     const cellRect = (event.currentTarget as SVGRectElement).getBoundingClientRect();
-    const text =
-      cell.count === 0
-        ? `${cell.date}: ${m.stats_no_sessions_today().toLowerCase()}`
-        : `${cell.date}: ${fmtRounds(cell.count)} ${m.stats_rounds().toLowerCase()}`;
+    let text: string;
+    if (cell.hours <= 0 && cell.count <= 0) {
+      text = `${cell.date}: ${m.heatmap_no_sessions()}`;
+    } else {
+      const totalMins = Math.round(cell.hours * 60);
+      const h = Math.floor(totalMins / 60);
+      const mins = totalMins % 60;
+      const timeStr = h > 0 ? (mins > 0 ? `${h}h ${mins}m` : `${h}h`) : `${mins}m`;
+      const roundLabel = cell.count === 1 ? m.heatmap_round() : m.heatmap_rounds();
+      text = `${cell.date}: ${timeStr} (${fmtRounds(cell.count)} ${roundLabel})`;
+    }
     tooltip = { x: cellRect.left + CELL / 2, y: cellRect.top - 8, text };
   }
 
@@ -156,9 +198,10 @@
   <style>
     :root {
       --heat-0: color-mix(in oklch, var(--color-foreground) 6%, var(--color-background));
-      --heat-1: color-mix(in oklch, var(--color-focus-round) 28%, var(--color-background));
-      --heat-2: color-mix(in oklch, var(--color-focus-round) 60%, var(--color-background));
-      --heat-3: var(--color-focus-round);
+      --heat-1: color-mix(in oklch, var(--color-focus-round) 25%, var(--color-background));
+      --heat-2: color-mix(in oklch, var(--color-focus-round) 50%, var(--color-background));
+      --heat-3: color-mix(in oklch, var(--color-focus-round) 75%, var(--color-background));
+      --heat-4: var(--color-focus-round);
     }
   </style>
 </svelte:head>
@@ -256,7 +299,7 @@
                 class="cell"
                 class:cell-dimmed={cell.dimmed}
                 role="img"
-                aria-label="{cell.date}: {fmtRounds(cell.count)} {m.stats_rounds().toLowerCase()}"
+                aria-label="{cell.date}: {cell.hours.toFixed(1)}h ({fmtRounds(cell.count)} {m.stats_rounds().toLowerCase()})"
                 onmouseenter={(e) => showTooltip(e, cell)}
                 onmouseleave={() => {
                   tooltip = null;
@@ -297,8 +340,19 @@
         <!-- Legend -->
         <div class="legend">
           <span class="legend-label">{m.stats_legend_less()}</span>
-          {#each [0, 1, 2, 3] as lvl}
-            <div class="legend-cell" style="background: {LEVEL_FILL[lvl]}"></div>
+          {#each [0, 1, 2, 3, 4] as lvl}
+            {@const legendTips = [
+              m.heatmap_level_0(),
+              m.heatmap_level_1(),
+              m.heatmap_level_2(),
+              m.heatmap_level_3(),
+              m.heatmap_level_4(),
+            ]}
+            <div
+              class="legend-cell"
+              style="background: {LEVEL_FILL[lvl]}"
+              title={legendTips[lvl]}
+            ></div>
           {/each}
           <span class="legend-label">{m.stats_legend_more()}</span>
         </div>

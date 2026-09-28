@@ -7,12 +7,15 @@
   const MIN_SECS = 60; // 1:00
   const MAX_SECS = 5400; // 90:00
   const MAX_ROUNDS = 12;
+  const MIN_WEEKLY_GOAL = 1;
+  const MAX_WEEKLY_GOAL = 60;
 
   // Slider positions (whole minutes) derived from stored seconds.
   let workMins = $derived(Math.round($settings.time_work_secs / 60));
   let shortMins = $derived(Math.round($settings.time_short_break_secs / 60));
   let longMins = $derived(Math.round($settings.time_long_break_secs / 60));
   let rounds = $derived($settings.long_break_interval);
+  let weeklyGoal = $derived($settings.weekly_goal_hours ?? 15);
 
   // Per-row edit state: the raw text the user is currently typing.
   let workEdit = $state<string | null>(null);
@@ -288,6 +291,26 @@
         />
         <div class="bar bar--rounds" style="width: {barWidth(rounds, 1, MAX_ROUNDS)}"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Weekly Goal (Hours) -->
+  <div class="slider-row">
+    <div class="slider-meta">
+      <span class="slider-label">{m.timer_slider_weekly_goal()}</span>
+      <span class="slider-value slider-value--static">{weeklyGoal}h</span>
+    </div>
+    <div class="slider-wrap">
+      <input
+        type="range"
+        min={MIN_WEEKLY_GOAL}
+        max={MAX_WEEKLY_GOAL}
+        step="1"
+        value={weeklyGoal}
+        class="slider"
+        oninput={(e) => handleChange('weekly_goal_hours', (e.target as HTMLInputElement).valueAsNumber)}
+      />
+      <div class="bar bar--focus" style="width: {barWidth(weeklyGoal, MIN_WEEKLY_GOAL, MAX_WEEKLY_GOAL)}"></div>
     </div>
   </div>
 

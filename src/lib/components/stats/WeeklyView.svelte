@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { DayStat, StreakInfo, TaskStat } from '$lib/types';
+  import { settings } from '$lib/stores/settings';
   import { obsidianExportWeekly } from '$lib/ipc';
   import * as m from '$paraglide/messages.js';
   import { getLocale } from '$paraglide/runtime.js';
@@ -64,6 +65,16 @@
   const totalWeek = $derived(days.reduce((s, d) => s + d.rounds, 0));
   const hasData = $derived(totalWeek > 0);
 
+  const totalWeekSecs = $derived(
+    tasks && tasks.length > 0
+      ? tasks.reduce((sum, t) => sum + t.focus_secs, 0)
+      : totalWeek * ($settings.time_work_secs || 1500)
+  );
+  const totalWeekHours = $derived(totalWeekSecs / 3600);
+  const weeklyGoal = $derived($settings.weekly_goal_hours ?? 15);
+  const goalPct = $derived(weeklyGoal > 0 ? Math.round((totalWeekHours / weeklyGoal) * 100) : 0);
+  const goalProgressWidth = $derived(Math.min(100, goalPct));
+
   let exportStatus = $state<'idle' | 'exporting' | 'success' | 'empty' | 'error'>('idle');
   let exportMessage = $state<string>('');
 
@@ -111,6 +122,18 @@
         </span>
       </div>
     {/if}
+
+    <div class="summary-item goal">
+      <span class="summary-label">{m.stats_weekly_goal_title()}</span>
+      <div class="goal-value-wrap">
+        <span class="summary-value">
+          🎯 {totalWeekHours.toFixed(1)}h / {weeklyGoal}h <span class="goal-pct">({goalPct}%)</span>
+        </span>
+        <div class="goal-bar-track">
+          <div class="goal-bar-fill" style="width: {goalProgressWidth}%"></div>
+        </div>
+      </div>
+    </div>
 
     <div class="summary-actions">
       <button
@@ -338,6 +361,33 @@
 
   .flame {
     font-size: 1rem;
+  }
+
+  .goal-value-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .goal-pct {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-focus-round);
+  }
+
+  .goal-bar-track {
+    width: 120px;
+    height: 4px;
+    background: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .goal-bar-fill {
+    height: 100%;
+    background: var(--color-focus-round);
+    border-radius: 2px;
+    transition: width 0.3s ease;
   }
 
   /* ── Bar chart ───────────────────────────────────────────── */

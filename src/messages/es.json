@@ -13,6 +13,7 @@
   "timer_slider_short_break": "Pausa corta",
   "timer_slider_long_break": "Pausa larga",
   "timer_slider_rounds": "Rondas hasta la pausa larga",
+  "timer_slider_weekly_goal": "Meta de enfoque semanal (horas)",
   "timer_toggle_auto_start_work": "Iniciar trabajo automáticamente",
   "timer_toggle_auto_start_work_desc": "Comenzar automáticamente la siguiente sesión de trabajo cuando termine un descanso.",
   "timer_toggle_auto_start_break": "Iniciar descansos automáticamente",
@@ -164,5 +165,15 @@
   "obsidian_export_success": "Reporte guardado en Obsidian",
   "obsidian_export_no_data": "Sin sesiones esta semana",
   "obsidian_export_tooltip": "Generar y guardar reporte semanal en tu bóveda de Obsidian",
-  "stats_tasks_breakdown": "Tiempo por tarea"
+  "stats_tasks_breakdown": "Tiempo por tarea",
+  "stats_weekly_goal_title": "Meta semanal",
+  "stats_weekly_goal_progress": "{current}h / {goal}h ({pct}%)",
+  "heatmap_level_0": "0 horas",
+  "heatmap_level_1": "Hasta 2 horas",
+  "heatmap_level_2": "2 a 4 horas",
+  "heatmap_level_3": "4 a 6 horas",
+  "heatmap_level_4": "Más de 6 horas",
+  "heatmap_no_sessions": "Sin sesiones registradas",
+  "heatmap_rounds": "rondas",
+  "heatmap_round": "ronda"
 }

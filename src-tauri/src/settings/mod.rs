@@ -22,6 +22,8 @@ pub struct Settings {
     pub notifications_enabled: bool,
     /// Number of work rounds before a long break.
     pub long_break_interval: u32,
+    /// Weekly focus goal in hours.
+    pub weekly_goal_hours: u32,
     pub short_breaks_enabled: bool,
     pub long_breaks_enabled: bool,
     /// When true the dial arc starts full and subtracts; when false it fills from empty.
@@ -79,6 +81,7 @@ impl Default for Settings {
             min_to_tray_on_close: false,
             notifications_enabled: false,
             long_break_interval: 4,
+            weekly_goal_hours: 15,
             short_breaks_enabled: true,
             long_breaks_enabled: true,
             dial_countdown: true,
@@ -188,6 +191,7 @@ pub fn load(conn: &Connection) -> Result<Settings> {
         min_to_tray_on_close: parse_bool(&map, "min_to_tray_on_close", d.min_to_tray_on_close),
         notifications_enabled: parse_bool(&map, "notifications", d.notifications_enabled),
         long_break_interval: parse_u32(&map, "work_rounds", d.long_break_interval),
+        weekly_goal_hours: parse_u32(&map, "weekly_goal_hours", d.weekly_goal_hours),
         short_breaks_enabled: parse_bool(&map, "short_breaks_enabled", d.short_breaks_enabled),
         long_breaks_enabled: parse_bool(&map, "long_breaks_enabled", d.long_breaks_enabled),
         dial_countdown: parse_bool(&map, "dial_countdown", d.dial_countdown),
