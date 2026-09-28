@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { DayStat, StreakInfo, TaskStat } from '$lib/types';
+  import type { CalendarWeekStats, DayStat, StreakInfo, TaskStat } from '$lib/types';
   import { settings } from '$lib/stores/settings';
-  import { obsidianExportWeekly } from '$lib/ipc';
+  import { obsidianExportWeekly, statsGetWeeklyByOffset } from '$lib/ipc';
   import * as m from '$paraglide/messages.js';
   import { getLocale } from '$paraglide/runtime.js';
 
@@ -15,36 +15,137 @@
     tasks: TaskStat[] | null;
   } = $props();
 
+  let weekOffset = $state(0);
+  let calendarStats = $state<CalendarWeekStats | null>(null);
+  let isLoading = $state(false);
+
+  const isCurrentWeek = $derived(weekOffset === 0);
+  const canGoForward = $derived(weekOffset < 0);
+
+  function prevWeek() {
+    weekOffset--;
+  }
+
+  function nextWeek() {
+    if (canGoForward) {
+      weekOffset++;
+    }
+  }
+
+  async function loadWeek(offset: number) {
+    isLoading = true;
+    try {
+      calendarStats = await statsGetWeeklyByOffset(offset);
+    } catch (e) {
+      console.error('Failed to load calendar week stats:', e);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  $effect(() => {
+    // Re-fetch when weekOffset changes or when parent week prop updates (e.g. after round completes)
+    const _ = week;
+    loadWeek(weekOffset);
+  });
+
+  function getTodayIso(): string {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  const todayIso = getTodayIso();
+
+  function getCalendarWeekDates(offset: number): string[] {
+    const d = new Date();
+    const currentDay = d.getDay(); // 0 is Sun, 1 is Mon, ..., 6 is Sat
+    const distToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + distToMonday + offset * 7);
+    monday.setHours(0, 0, 0, 0);
+
+    const dates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const cur = new Date(monday);
+      cur.setDate(monday.getDate() + i);
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const day = String(cur.getDate()).padStart(2, '0');
+      dates.push(`${y}-${m}-${day}`);
+    }
+    return dates;
+  }
+
+  function getIsoWeek(dateStr: string): number {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    const dayNum = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    return Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  }
+
+  function formatDateRange(startDateStr: string, endDateStr: string, locale: string): string {
+    const [sy, sm, sd] = startDateStr.split('-').map(Number);
+    const [ey, em, ed] = endDateStr.split('-').map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+
+    const monthFmt = new Intl.DateTimeFormat(locale, { month: 'short' });
+    const isEs = locale.startsWith('es');
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    if (sy === ey && sm === em) {
+      const mStr = cap(monthFmt.format(start).replace('.', ''));
+      return isEs ? `${sd} al ${ed} ${mStr} ${sy}` : `${mStr} ${sd} – ${ed}, ${sy}`;
+    } else if (sy === ey) {
+      const m1 = cap(monthFmt.format(start).replace('.', ''));
+      const m2 = cap(monthFmt.format(end).replace('.', ''));
+      return isEs ? `${sd} ${m1} al ${ed} ${m2} ${sy}` : `${m1} ${sd} – ${m2} ${ed}, ${sy}`;
+    } else {
+      const m1 = cap(monthFmt.format(start).replace('.', ''));
+      const m2 = cap(monthFmt.format(end).replace('.', ''));
+      return isEs ? `${sd} ${m1} ${sy} al ${ed} ${m2} ${ey}` : `${m1} ${sd}, ${sy} – ${m2} ${ed}, ${ey}`;
+    }
+  }
+
+  const weekTitle = $derived.by(() => {
+    const start = calendarStats?.start_date ?? getCalendarWeekDates(weekOffset)[0];
+    const end = calendarStats?.end_date ?? getCalendarWeekDates(weekOffset)[6];
+    const isoWeek = getIsoWeek(start);
+    const range = formatDateRange(start, end, getLocale());
+    return m.stats_week_label({ week: String(isoWeek), range });
+  });
+
   const CHART_H = 140; // px, max bar height
   const BAR_W = 52; // px per bar
   const BAR_GAP = 16; // px between bars
   const CHART_W = 7 * (BAR_W + BAR_GAP) - BAR_GAP; // 412px
 
-  // Reactive to app language setting — updates when user changes language in Settings.
   const shortFmt = $derived(new Intl.DateTimeFormat(getLocale(), { weekday: 'short' }));
   const narrowFmt = $derived(new Intl.DateTimeFormat(getLocale(), { weekday: 'narrow' }));
 
-  // Build a 7-day array (today and the previous 6 days), oldest first.
   const days = $derived.by(() => {
-    const countByDate = new Map((week ?? []).map((d) => [d.date, d.rounds]));
+    const statsDays = calendarStats?.days;
+    const dates = statsDays ? statsDays.map((d) => d.date) : getCalendarWeekDates(weekOffset);
+    const roundsByDate = new Map(statsDays ? statsDays.map((d) => [d.date, d.rounds]) : []);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() - (6 - i));
-      const dateStr = [
-        d.getFullYear(),
-        String(d.getMonth() + 1).padStart(2, '0'),
-        String(d.getDate()).padStart(2, '0'),
-      ].join('-');
+    return dates.map((dateStr) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dateObj = new Date(y, m - 1, d);
+      const isToday = dateStr === todayIso;
+      const isFuture = dateStr > todayIso;
+      const rounds = roundsByDate.get(dateStr) ?? 0;
       return {
         date: dateStr,
-        label: shortFmt.format(d),
-        short: narrowFmt.format(d),
-        rounds: countByDate.get(dateStr) ?? 0,
-        isToday: i === 6,
+        label: shortFmt.format(dateObj),
+        short: narrowFmt.format(dateObj),
+        rounds,
+        isToday,
+        isFuture,
       };
     });
   });
@@ -65,9 +166,11 @@
   const totalWeek = $derived(days.reduce((s, d) => s + d.rounds, 0));
   const hasData = $derived(totalWeek > 0);
 
+  const activeTasks = $derived(calendarStats?.tasks ?? tasks ?? []);
+
   const totalWeekSecs = $derived(
-    tasks && tasks.length > 0
-      ? tasks.reduce((sum, t) => sum + t.focus_secs, 0)
+    activeTasks && activeTasks.length > 0
+      ? activeTasks.reduce((sum, t) => sum + t.focus_secs, 0)
       : totalWeek * ($settings.time_work_secs || 1500)
   );
   const totalWeekHours = $derived(totalWeekSecs / 3600);
@@ -81,7 +184,7 @@
   async function handleObsidianExport() {
     exportStatus = 'exporting';
     try {
-      const res = await obsidianExportWeekly(0);
+      const res = await obsidianExportWeekly(weekOffset);
       if (res.exported) {
         exportStatus = 'success';
         exportMessage = res.message;
@@ -103,13 +206,56 @@
 </script>
 
 <div class="view">
+  <!-- Week navigation header -->
+  <div class="nav-bar">
+    <button
+      class="nav-btn"
+      onclick={prevWeek}
+      aria-label={m.stats_prev_week()}
+      title={m.stats_prev_week()}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <polyline
+          points="9,2 4,7 9,12"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+    <div class="date-label-wrap">
+      <span class="date-label">{weekTitle}</span>
+      {#if isCurrentWeek}
+        <span class="today-badge">{m.stats_current_week()}</span>
+      {/if}
+    </div>
+    <button
+      class="nav-btn"
+      onclick={nextWeek}
+      disabled={!canGoForward}
+      aria-label={m.stats_next_week()}
+      title={m.stats_next_week()}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <polyline
+          points="5,2 10,7 5,12"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
+  </div>
+
   <!-- Summary row -->
   <div class="summary">
     <div class="summary-item">
-      <span class="summary-label">{m.stats_this_week()}</span>
+      <span class="summary-label">{isCurrentWeek ? m.stats_this_week() : m.stats_rounds()}</span>
       <span class="summary-value">{fmtRounds(totalWeek)} {m.stats_rounds().toLowerCase()}</span>
     </div>
-    {#if streak}
+    {#if isCurrentWeek && streak}
       <div class="summary-item streak">
         <span class="summary-label">{m.stats_current_streak()}</span>
         <span class="summary-value">
@@ -207,6 +353,7 @@
               class="bar"
               class:bar-today={day.isToday}
               class:bar-empty={day.rounds === 0}
+              class:bar-future={day.isFuture}
               style="--bar-delay: {i * 40}ms"
             />
 
@@ -223,26 +370,27 @@
               y={CHART_H + 20}
               text-anchor="middle"
               class="day-label"
-              class:day-label-today={day.isToday}>{day.short}</text
+              class:day-label-today={day.isToday}
+              class:day-label-future={day.isFuture}>{day.short}</text
             >
           {/each}
 
           <!-- Baseline -->
-          <line x1="0" y1={CHART_H} x2={CHART_W} y2={CHART_W} class="baseline" />
+          <line x1="0" y1={CHART_H} x2={CHART_W} y2={CHART_H} class="baseline" />
         </svg>
       </div>
     {/if}
   </div>
 
   <!-- Task breakdown -->
-  {#if tasks && tasks.length > 0}
+  {#if activeTasks && activeTasks.length > 0}
     <div class="tasks-section">
       <div class="tasks-header">
         <span class="tasks-title">{m.stats_tasks_breakdown()}</span>
       </div>
 
       <div class="tasks-list">
-        {#each tasks as task}
+        {#each activeTasks as task}
           {@const mins = Math.round(task.focus_secs / 60)}
           <div class="task-row">
             <div class="task-meta">
@@ -265,6 +413,65 @@
     flex-direction: column;
     height: 100%;
     animation: app-fade-in 0.2s ease;
+  }
+
+  /* ── Week navigation ─────────────────────────────────────── */
+  .nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 20px 8px;
+    border-bottom: 1px solid var(--color-separator);
+    flex-shrink: 0;
+  }
+
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--color-foreground-darker);
+    cursor: pointer;
+    transition: all var(--transition-snappy);
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    background: var(--color-hover);
+    color: var(--color-foreground);
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  .date-label-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .date-label {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--color-foreground);
+    letter-spacing: 0.01em;
+  }
+
+  .today-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
+    color: var(--color-focus-round);
   }
 
   /* ── Summary row ─────────────────────────────────────────── */
@@ -445,6 +652,11 @@
     animation: none;
   }
 
+  .bar-future {
+    opacity: 0.2;
+    animation: none;
+  }
+
   .count-label {
     fill: var(--color-foreground-darker);
     font-size: 10px;
@@ -467,6 +679,10 @@
   .day-label-today {
     fill: var(--color-focus-round);
     font-weight: 700;
+  }
+
+  .day-label-future {
+    opacity: 0.35;
   }
 
   .baseline {

@@ -365,6 +365,26 @@ pub fn stats_get_detailed(db: State<'_, DbState>) -> Result<DetailedStats, Strin
     Ok(DetailedStats { today, week, streak, week_tasks })
 }
 
+/// Query daily stats for a specific date (YYYY-MM-DD).
+#[tauri::command]
+pub fn stats_get_daily_by_date(
+    date: String,
+    db: State<'_, DbState>,
+) -> Result<queries::DailyStats, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_daily_stats_by_date(&conn, &date).map_err(|e| e.to_string())
+}
+
+/// Query calendar week stats (Monday to Sunday) for a week offset.
+#[tauri::command]
+pub fn stats_get_weekly_by_offset(
+    week_offset: i32,
+    db: State<'_, DbState>,
+) -> Result<queries::CalendarWeekStats, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_calendar_week_stats(&conn, week_offset).map_err(|e| e.to_string())
+}
+
 /// Returns the list of all defined tasks (with 'General' first).
 #[tauri::command]
 pub fn tasks_list(db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {

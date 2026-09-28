@@ -175,5 +175,12 @@
   "heatmap_level_4": "More than 6 hours",
   "heatmap_no_sessions": "No sessions recorded",
   "heatmap_rounds": "rounds",
-  "heatmap_round": "round"
+  "heatmap_round": "round",
+  "stats_prev_day": "Previous day",
+  "stats_next_day": "Next day",
+  "stats_prev_week": "Previous week",
+  "stats_next_week": "Next week",
+  "stats_current_week": "Current week",
+  "stats_week_label": "Week {week} ({range})",
+  "stats_no_sessions_date": "No sessions on this day"
 }

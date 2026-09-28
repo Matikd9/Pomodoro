@@ -117,6 +117,15 @@ export interface StreakInfo {
   longest: number;
 }
 
+export interface CalendarWeekStats {
+  start_date: string;
+  end_date: string;
+  iso_year: number;
+  iso_week: number;
+  days: DayStat[];
+  tasks: TaskStat[];
+}
+
 /** Returned by stats_get_detailed — Today + This Week + streak in one call. */
 export interface DetailedStats {
   today: DailyStats;

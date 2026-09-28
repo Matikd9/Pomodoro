@@ -6,7 +6,7 @@ use std::time::Duration;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Json, State,
+        Json, Query, State,
     },
     http::StatusCode,
     response::IntoResponse,
@@ -439,6 +439,8 @@ async fn main() {
         .route("/api/tasks/delete", post(api_tasks_delete))
         .route("/api/export/obsidian", post(api_export_obsidian))
         .route("/api/stats/detailed", get(api_stats_detailed))
+        .route("/api/stats/daily", get(api_stats_daily))
+        .route("/api/stats/weekly", get(api_stats_weekly))
         .route("/api/stats/heatmap", get(api_stats_heatmap))
         .route("/api/settings", get(api_settings_get).post(api_settings_set))
         .route("/api/settings/reset", post(api_settings_reset))
@@ -625,6 +627,39 @@ async fn api_stats_detailed(
     let streak = queries::get_streak(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let week_tasks = queries::get_weekly_task_breakdown(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(DetailedStatsResp { today, week, streak, week_tasks }))
+}
+
+#[derive(Deserialize)]
+struct DailyStatsQuery {
+    date: Option<String>,
+}
+
+async fn api_stats_daily(
+    State(ctl): State<Arc<ServerController>>,
+    Query(q): Query<DailyStatsQuery>,
+) -> Result<Json<queries::DailyStats>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let stats = if let Some(d) = q.date {
+        queries::get_daily_stats_by_date(&conn, &d).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    } else {
+        queries::get_daily_stats(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
+    Ok(Json(stats))
+}
+
+#[derive(Deserialize)]
+struct WeeklyStatsQuery {
+    offset: Option<i32>,
+}
+
+async fn api_stats_weekly(
+    State(ctl): State<Arc<ServerController>>,
+    Query(q): Query<WeeklyStatsQuery>,
+) -> Result<Json<queries::CalendarWeekStats>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let stats = queries::get_calendar_week_stats(&conn, q.offset.unwrap_or(0))
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(stats))
 }
 
 #[derive(Serialize)]

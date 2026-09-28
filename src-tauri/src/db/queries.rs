@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Session CRUD (DATA-03)
@@ -117,14 +117,14 @@ pub fn get_all_time_stats(conn: &Connection) -> Result<SessionStats> {
 // Detailed stats queries (DATA-04)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct TaskStat {
     pub task_name: String,
     pub focus_secs: u32,
     pub rounds: f32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct DailyStats {
     /// Total work rounds today (including fractions, e.g., 2.5).
     pub rounds: f32,
@@ -137,11 +137,21 @@ pub struct DailyStats {
     pub task_breakdown: Vec<TaskStat>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct DayStat {
     /// Local calendar date in "YYYY-MM-DD" format.
     pub date: String,
     pub rounds: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct CalendarWeekStats {
+    pub start_date: String,
+    pub end_date: String,
+    pub iso_year: i32,
+    pub iso_week: u32,
+    pub days: Vec<DayStat>,
+    pub tasks: Vec<TaskStat>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -159,19 +169,13 @@ pub struct StreakInfo {
     pub longest: u32,
 }
 
-/// Work rounds (including fractions) and focus time for today (local calendar date).
-pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
-    let today: String = conn.query_row(
-        "SELECT date('now', 'localtime')",
-        [],
-        |r| r.get(0),
-    )?;
-
+/// Work rounds (including fractions) and focus time for a specific date (YYYY-MM-DD).
+pub fn get_daily_stats_by_date(conn: &Connection, target_date: &str) -> Result<DailyStats> {
     let total: i64 = conn.query_row(
         "SELECT COUNT(*) FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') = ?1",
-        [&today],
+        [target_date],
         |r| r.get(0),
     )?;
 
@@ -179,7 +183,7 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
         "SELECT COUNT(*) FROM sessions
          WHERE round_type = 'work' AND completed = 1 AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') = ?1",
-        [&today],
+        [target_date],
         |r| r.get(0),
     )?;
 
@@ -188,7 +192,7 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
          FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') = ?1",
-        [&today],
+        [target_date],
         |r| r.get(0),
     )?;
 
@@ -196,7 +200,7 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
         "SELECT COALESCE(SUM(duration_secs), 0) FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') = ?1",
-        [&today],
+        [target_date],
         |r| r.get(0),
     )?;
 
@@ -209,7 +213,7 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
          AND date(started_at, 'unixepoch', 'localtime') = ?1
          GROUP BY h",
     )?;
-    let rows = stmt.query_map([&today], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))?;
+    let rows = stmt.query_map([target_date], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))?;
     for row in rows.flatten() {
         let (h, cnt) = row;
         if (0..24).contains(&h) {
@@ -217,7 +221,7 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
         }
     }
 
-    let task_breakdown = get_daily_task_breakdown(conn, &today)?;
+    let task_breakdown = get_daily_task_breakdown(conn, target_date)?;
 
     Ok(DailyStats {
         rounds: rounds as f32,
@@ -226,6 +230,16 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
         by_hour,
         task_breakdown,
     })
+}
+
+/// Work rounds (including fractions) and focus time for today (local calendar date).
+pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
+    let today: String = conn.query_row(
+        "SELECT date('now', 'localtime')",
+        [],
+        |r| r.get(0),
+    )?;
+    get_daily_stats_by_date(conn, &today)
 }
 
 /// Completed work rounds and portions per local calendar day for the last 7 days.
@@ -338,6 +352,91 @@ pub fn get_daily_task_breakdown(conn: &Connection, date: &str) -> Result<Vec<Tas
         list.push(item);
     }
     Ok(list)
+}
+
+/// Returns the task breakdown (focus seconds and rounds) for a date range [start_date, end_date].
+pub fn get_weekly_task_breakdown_between(
+    conn: &Connection,
+    start_date: &str,
+    end_date: &str,
+) -> Result<Vec<TaskStat>> {
+    let mut stmt = conn.prepare(
+        "SELECT COALESCE(NULLIF(task_name, ''), 'General') as task,
+                COALESCE(SUM(duration_secs), 0) as total_secs,
+                COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0) as total_rounds
+         FROM sessions
+         WHERE round_type = 'work' AND duration_secs >= 120
+           AND date(started_at, 'unixepoch', 'localtime') >= ?1
+           AND date(started_at, 'unixepoch', 'localtime') <= ?2
+         GROUP BY task
+         ORDER BY total_secs DESC",
+    )?;
+    let rows = stmt.query_map([start_date, end_date], |r| {
+        Ok(TaskStat {
+            task_name: r.get(0)?,
+            focus_secs: r.get::<_, i64>(1)? as u32,
+            rounds: r.get::<_, f64>(2)? as f32,
+        })
+    })?;
+    let mut list = Vec::new();
+    for item in rows.flatten() {
+        list.push(item);
+    }
+    Ok(list)
+}
+
+/// Returns the 7 calendar days (Monday to Sunday) and task breakdown for a week offset.
+/// offset 0 = current week, -1 = previous week, etc.
+pub fn get_calendar_week_stats(conn: &Connection, week_offset: i32) -> Result<CalendarWeekStats> {
+    let day_modifier = format!("{} days", week_offset * 7);
+
+    let (start_date, end_date): (String, String) = conn.query_row(
+        "SELECT date('now', 'localtime', ?1, 'weekday 0', '-6 days'),
+                date('now', 'localtime', ?1, 'weekday 0')",
+        [&day_modifier],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    let (iso_year, iso_week): (i32, u32) = conn.query_row(
+        "SELECT CAST(strftime('%Y', date(?1, '+3 days')) AS INTEGER),
+                CAST((strftime('%j', date(?1, '+3 days')) - 1) / 7 + 1 AS INTEGER)",
+        [&start_date],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+
+    let mut days = Vec::with_capacity(7);
+    for i in 0..7 {
+        let day_date: String = conn.query_row(
+            "SELECT date(?1, ?2)",
+            [&start_date, &format!("+{i} days")],
+            |r| r.get(0),
+        )?;
+        let rounds: f64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0)
+                 FROM sessions
+                 WHERE round_type = 'work' AND duration_secs >= 120
+                   AND date(started_at, 'unixepoch', 'localtime') = ?1",
+                [&day_date],
+                |r| r.get(0),
+            )
+            .unwrap_or(0.0);
+        days.push(DayStat {
+            date: day_date,
+            rounds: rounds as f32,
+        });
+    }
+
+    let tasks = get_weekly_task_breakdown_between(conn, &start_date, &end_date)?;
+
+    Ok(CalendarWeekStats {
+        start_date,
+        end_date,
+        iso_year,
+        iso_week,
+        days,
+        tasks,
+    })
 }
 
 /// Returns the task breakdown (focus seconds and rounds) for the last 7 days.
@@ -703,5 +802,23 @@ mod tests {
         // Delete Math
         let after_delete = delete_task(&conn, "Math").unwrap();
         assert!(!after_delete.iter().any(|t| t.name == "Math"));
+    }
+
+    #[test]
+    fn get_daily_stats_by_date_test() {
+        let conn = setup();
+        let stats = get_daily_stats_by_date(&conn, "2026-09-28").unwrap();
+        assert_eq!(stats.rounds, 0.0);
+        assert_eq!(stats.focus_mins, 0);
+        assert_eq!(stats.by_hour.len(), 24);
+    }
+
+    #[test]
+    fn get_calendar_week_stats_test() {
+        let conn = setup();
+        let week = get_calendar_week_stats(&conn, 0).unwrap();
+        assert_eq!(week.days.len(), 7);
+        assert!(!week.start_date.is_empty());
+        assert!(!week.end_date.is_empty());
     }
 }

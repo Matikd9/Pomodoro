@@ -11,6 +11,8 @@ import type {
   Theme,
   CustomAudioInfo,
   DetailedStats,
+  DailyStats,
+  CalendarWeekStats,
   HeatmapStats,
   UpdateInfo,
   TaskItem,
@@ -518,6 +520,22 @@ export const statsGetDetailed = async () => {
     return remoteFetch<DetailedStats>('/api/stats/detailed');
   }
   return invoke<DetailedStats>('stats_get_detailed');
+};
+
+/** Daily stats for a specific date (YYYY-MM-DD). */
+export const statsGetDailyByDate = async (date: string): Promise<DailyStats> => {
+  if (isRemoteMode()) {
+    return remoteFetch<DailyStats>(`/api/stats/daily?date=${encodeURIComponent(date)}`);
+  }
+  return invoke<DailyStats>('stats_get_daily_by_date', { date });
+};
+
+/** Calendar week stats (Monday to Sunday) and task breakdown for a week offset. */
+export const statsGetWeeklyByOffset = async (weekOffset: number): Promise<CalendarWeekStats> => {
+  if (isRemoteMode()) {
+    return remoteFetch<CalendarWeekStats>(`/api/stats/weekly?offset=${weekOffset}`);
+  }
+  return invoke<CalendarWeekStats>('stats_get_weekly_by_offset', { weekOffset });
 };
 
 /** Heatmap entries + lifetime totals (All Time tab). */

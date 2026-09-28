@@ -29,6 +29,7 @@ use commands::{
     shortcuts_reload,
     sessions_clear,
     stats_get_detailed, stats_get_heatmap,
+    stats_get_daily_by_date, stats_get_weekly_by_offset,
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
     tasks_list, tasks_create, tasks_toggle_complete, tasks_delete,
@@ -406,6 +407,8 @@ pub fn run() {
             // Stats
             stats_get_detailed,
             stats_get_heatmap,
+            stats_get_daily_by_date,
+            stats_get_weekly_by_offset,
             // Window
             window_set_visibility,
             // Shortcuts
