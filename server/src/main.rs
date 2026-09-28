@@ -135,7 +135,7 @@ impl ServerController {
             is_running: sh.is_running,
             is_paused: !sh.is_running && sh.elapsed_secs > 0,
             work_round_number: seq.work_round_number,
-            work_rounds_total: seq.work_rounds_total,
+            work_rounds_total: s.long_break_interval,
             session_work_count: seq.session_work_count,
             today_focus_secs,
             current_task: task,
@@ -326,6 +326,7 @@ async fn main() {
                             let (next_round, next_duration, auto_start_work, auto_start_break) = {
                                 let mut seq = seq_thread.lock().unwrap();
                                 let s = settings_thread.lock().unwrap();
+                                seq.work_rounds_total = s.long_break_interval;
                                 let (rt, dur) = seq.advance(&s);
                                 (rt, dur, s.auto_start_work, s.auto_start_break)
                             };
@@ -498,7 +499,7 @@ fn build_snapshot_raw(
         is_running: s_sh.is_running,
         is_paused: !s_sh.is_running && s_sh.elapsed_secs > 0,
         work_round_number: s_seq.work_round_number,
-        work_rounds_total: s_seq.work_rounds_total,
+        work_rounds_total: s_sett.long_break_interval,
         session_work_count: s_seq.session_work_count,
         today_focus_secs,
         current_task: s_task,
@@ -672,7 +673,19 @@ async fn api_settings_set(
     let updated = settings::load(&conn)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     *ctl.settings.lock().unwrap() = updated.clone();
+    ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
+
+    let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
+    let s = ctl.shared.lock().unwrap();
+    let is_idle = !s.is_running && s.elapsed_secs == 0;
+    drop(s);
+    if is_idle {
+        ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    }
+
     let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });
+    let snap = ctl.get_snapshot();
+    let _ = ctl.broadcast_tx.send(WsEvent::Reset { payload: snap });
     Ok(Json(updated))
 }
 
@@ -684,9 +697,15 @@ async fn api_settings_reset(
     settings::seed_defaults(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let updated = settings::load(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     *ctl.settings.lock().unwrap() = updated.clone();
+    ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
 
     let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
-    ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    let s = ctl.shared.lock().unwrap();
+    let is_idle = !s.is_running && s.elapsed_secs == 0;
+    drop(s);
+    if is_idle {
+        ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    }
 
     let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });
     let snap = ctl.get_snapshot();

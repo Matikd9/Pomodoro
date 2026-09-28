@@ -382,6 +382,7 @@ fn listen_events(
                 let (next_round, next_duration, auto_start_work, auto_start_break) = {
                     let mut seq = sequence.lock().unwrap();
                     let s = settings.lock().unwrap();
+                    seq.work_rounds_total = s.long_break_interval;
                     let (rt, dur) = seq.advance(&s);
                     (rt, dur, s.auto_start_work, s.auto_start_break)
                 };
@@ -592,7 +593,7 @@ fn build_snapshot(
         is_running: sh.is_running,
         is_paused: !sh.is_running && sh.elapsed_secs > 0,
         work_round_number: seq.work_round_number,
-        work_rounds_total: seq.work_rounds_total,
+        work_rounds_total: s.long_break_interval,
         session_work_count: seq.session_work_count,
         today_focus_secs,
         current_task: task,
