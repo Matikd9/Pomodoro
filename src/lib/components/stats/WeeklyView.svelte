@@ -411,7 +411,7 @@
   .view {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    min-height: 100%;
     animation: app-fade-in 0.2s ease;
   }
 
@@ -600,6 +600,7 @@
   /* ── Bar chart ───────────────────────────────────────────── */
   .chart-section {
     flex: 1;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -697,6 +698,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    flex-shrink: 0;
   }
 
   .tasks-header {

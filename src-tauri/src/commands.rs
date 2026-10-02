@@ -392,11 +392,38 @@ pub fn tasks_list(db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, Stri
     queries::get_tasks(&conn).map_err(|e| e.to_string())
 }
 
+/// Returns the comprehensive summary of all tasks with focus statistics across periods.
+#[tauri::command]
+pub fn tasks_get_summary(db: State<'_, DbState>) -> Result<Vec<queries::TaskStatsSummary>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_tasks_summary(&conn).map_err(|e| e.to_string())
+}
+
 /// Creates a new task and returns the updated task list.
 #[tauri::command]
 pub fn tasks_create(name: String, db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::create_task(&conn, &name).map_err(|e| e.to_string())
+}
+
+/// Renames a task, migrating past sessions to keep focus history under the new name.
+#[tauri::command]
+pub fn tasks_rename(
+    old_name: String,
+    new_name: String,
+    db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+) -> Result<Vec<queries::TaskStatsSummary>, String> {
+    {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        queries::rename_task(&conn, &old_name, &new_name).map_err(|e| e.to_string())?;
+    }
+    let snap = timer.get_snapshot();
+    if snap.current_task == old_name {
+        timer.set_task(new_name);
+    }
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_tasks_summary(&conn).map_err(|e| e.to_string())
 }
 
 /// Marks a task as completed or restores it, and returns the updated task list.
@@ -410,11 +437,30 @@ pub fn tasks_toggle_complete(
     queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())
 }
 
-/// Permanently deletes a task from the database.
+/// Soft-deletes a task into the deleted section.
 #[tauri::command]
-pub fn tasks_delete(name: String, db: State<'_, DbState>) -> Result<Vec<queries::TaskItem>, String> {
+pub fn tasks_delete(
+    name: String,
+    db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+) -> Result<Vec<queries::TaskItem>, String> {
+    let snap = timer.get_snapshot();
+    if snap.current_task == name {
+        timer.set_task("General".to_string());
+    }
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::delete_task(&conn, &name).map_err(|e| e.to_string())
+}
+
+/// Restores a soft-deleted task back to active.
+#[tauri::command]
+pub fn tasks_restore(
+    name: String,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::TaskStatsSummary>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::restore_task(&conn, &name).map_err(|e| e.to_string())?;
+    queries::get_tasks_summary(&conn).map_err(|e| e.to_string())
 }
 
 /// Exports the weekly Pomodoro report to Obsidian Markdown.

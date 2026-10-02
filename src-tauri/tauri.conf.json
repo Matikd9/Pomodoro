@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "",
     "frontendDist": "../build"
   },
   "app": {
@@ -14,7 +14,7 @@
       {
         "title": "Pomotroid",
         "width": 360,
-        "height": 478,
+        "height": 520,
         "minWidth": 240,
         "minHeight": 240,
         "resizable": true,

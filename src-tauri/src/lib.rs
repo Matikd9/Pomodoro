@@ -32,7 +32,7 @@ use commands::{
     stats_get_daily_by_date, stats_get_weekly_by_offset,
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
-    tasks_list, tasks_create, tasks_toggle_complete, tasks_delete,
+    tasks_list, tasks_get_summary, tasks_create, tasks_rename, tasks_toggle_complete, tasks_delete, tasks_restore,
     obsidian_export_weekly, obsidian_save_file,
     window_set_visibility,
 };
@@ -390,9 +390,12 @@ pub fn run() {
             timer_set_task,
             // Tasks
             tasks_list,
+            tasks_get_summary,
             tasks_create,
+            tasks_rename,
             tasks_toggle_complete,
             tasks_delete,
+            tasks_restore,
             // Obsidian
             obsidian_export_weekly,
             obsidian_save_file,

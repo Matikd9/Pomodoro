@@ -9,6 +9,7 @@
     getRemoteServerUrl,
     setRemoteServerUrl,
     isRemoteMode,
+    DEFAULT_REMOTE_URL,
   } from '$lib/ipc';
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import * as m from '$paraglide/messages.js';
@@ -16,7 +17,9 @@
   import { isMac, isLinux, isTauri } from '$lib/utils/platform';
 
   let remoteUrlInput = $state(
-    typeof window !== 'undefined' ? (localStorage.getItem('pomotroid_remote_url') ?? '') : ''
+    typeof window !== 'undefined'
+      ? (localStorage.getItem('pomotroid_remote_url') || DEFAULT_REMOTE_URL)
+      : DEFAULT_REMOTE_URL
   );
   let remoteLoading = $state(false);
   let remoteStatus = $state<string | null>(null);

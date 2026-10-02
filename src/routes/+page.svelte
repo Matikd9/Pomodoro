@@ -22,7 +22,7 @@
 
   // Base window dimensions (natural/default size).
   const BASE_W = 360;
-  const BASE_H = 478;
+  const BASE_H = 520;
   const TITLEBAR_H = 40;
 
   // Compact mode: when either dimension drops below this threshold,

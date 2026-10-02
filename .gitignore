@@ -12,3 +12,4 @@ thumbs.db
 build/
 target/
 **/target/
+cli-win32-backup/

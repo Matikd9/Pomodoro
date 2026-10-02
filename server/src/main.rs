@@ -435,6 +435,9 @@ async fn main() {
         .route("/api/timer/restart", post(api_timer_restart))
         .route("/api/timer/task", post(api_timer_set_task))
         .route("/api/tasks", get(api_tasks_list).post(api_tasks_create))
+        .route("/api/tasks/summary", get(api_tasks_summary))
+        .route("/api/tasks/rename", post(api_tasks_rename))
+        .route("/api/tasks/restore", post(api_tasks_restore))
         .route("/api/tasks/complete", post(api_tasks_complete))
         .route("/api/tasks/delete", post(api_tasks_delete))
         .route("/api/export/obsidian", post(api_export_obsidian))
@@ -550,6 +553,12 @@ async fn api_tasks_list(State(ctl): State<Arc<ServerController>>) -> Result<Json
     Ok(Json(tasks))
 }
 
+async fn api_tasks_summary(State(ctl): State<Arc<ServerController>>) -> Result<Json<Vec<queries::TaskStatsSummary>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let summary = queries::get_tasks_summary(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(summary))
+}
+
 #[derive(Deserialize)]
 struct CreateTaskReq {
     name: String,
@@ -562,6 +571,47 @@ async fn api_tasks_create(
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::create_task(&conn, &req.name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(tasks))
+}
+
+#[derive(Deserialize)]
+struct RenameTaskReq {
+    old_name: String,
+    new_name: String,
+}
+
+async fn api_tasks_rename(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<RenameTaskReq>,
+) -> Result<Json<Vec<queries::TaskStatsSummary>>, StatusCode> {
+    {
+        let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        queries::rename_task(&conn, &req.old_name, &req.new_name)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    {
+        let mut cur = ctl.current_task.lock().unwrap();
+        if *cur == req.old_name {
+            *cur = req.new_name;
+        }
+    }
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let summary = queries::get_tasks_summary(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(summary))
+}
+
+#[derive(Deserialize)]
+struct RestoreTaskReq {
+    name: String,
+}
+
+async fn api_tasks_restore(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<RestoreTaskReq>,
+) -> Result<Json<Vec<queries::TaskStatsSummary>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    queries::restore_task(&conn, &req.name).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let summary = queries::get_tasks_summary(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(summary))
 }
 
 #[derive(Deserialize)]
@@ -589,6 +639,12 @@ async fn api_tasks_delete(
     State(ctl): State<Arc<ServerController>>,
     Json(req): Json<DeleteTaskReq>,
 ) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
+    {
+        let mut cur = ctl.current_task.lock().unwrap();
+        if *cur == req.name {
+            *cur = "General".to_string();
+        }
+    }
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::delete_task(&conn, &req.name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Round counter, reset/skip buttons, and volume slider.
-  import type { TimerState } from '$lib/types';
+  import type { TimerState, TimerMode } from '$lib/types';
   import { timerReset, setSetting } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
   import * as m from '$paraglide/messages.js';
@@ -8,9 +8,11 @@
 
   interface Props {
     snap: TimerState;
+    mode?: TimerMode;
+    onReset?: () => void;
   }
 
-  let { snap }: Props = $props();
+  let { snap, mode = 'pomodoro', onReset }: Props = $props();
 
   let showVolume = $state(false);
 
@@ -42,26 +44,39 @@
       setSetting('volume', '0');
     }
   }
+
+  async function handleResetClick() {
+    onReset?.();
+    await timerReset();
+  }
 </script>
 
-<!-- Round counter: X/Y when long breaks are active; labelled session count otherwise -->
-<Tooltip
-  text={$settings.long_breaks_enabled
-    ? m.tooltip_round_counter()
-    : m.tooltip_round_counter_session()}
->
-  <span class="rounds">
-    {#if $settings.long_breaks_enabled}
-      {snap.work_round_number} &nbsp;|&nbsp; {snap.work_rounds_total}
-    {:else}
-      {m.timer_session_round({ n: snap.session_work_count })}
-    {/if}
-  </span>
-</Tooltip>
+<!-- Round counter: In continuous mode, displays "∞ Continuous"; in pomodoro mode, X/Y or session round -->
+{#if mode === 'continuous'}
+  <Tooltip text={m.tooltip_continuous_mode_active()}>
+    <span class="rounds continuous-badge">
+      <span class="infinity-icon">∞</span> {m.timer_continuous_badge()}
+    </span>
+  </Tooltip>
+{:else}
+  <Tooltip
+    text={$settings.long_breaks_enabled
+      ? m.tooltip_round_counter()
+      : m.tooltip_round_counter_session()}
+  >
+    <span class="rounds">
+      {#if $settings.long_breaks_enabled}
+        {snap.work_round_number} &nbsp;|&nbsp; {snap.work_rounds_total}
+      {:else}
+        {m.timer_session_round({ n: snap.session_work_count })}
+      {/if}
+    </span>
+  </Tooltip>
+{/if}
 
 <!-- Reset -->
 <Tooltip text={m.tooltip_reset()}>
-  <button class="btn-text" onclick={timerReset} aria-label={m.timer_reset()}>
+  <button class="btn-text" onclick={handleResetClick} aria-label={m.timer_reset()}>
     {m.timer_reset()}
   </button>
 </Tooltip>
@@ -137,6 +152,23 @@
     min-width: 48px;
     text-align: center;
     cursor: default;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .continuous-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--color-focus-round, var(--color-foreground));
+    gap: 4px;
+    text-transform: uppercase;
+  }
+
+  .infinity-icon {
+    font-size: 0.95rem;
+    line-height: 1;
   }
 
   .btn-text {

@@ -2,6 +2,13 @@
   import { fade } from 'svelte/transition';
   import { timerToggle, timerRestartRound, timerSkip } from '$lib/ipc';
   import { timerState } from '$lib/stores/timer';
+  import type { TimerMode } from '$lib/types';
+
+  interface Props {
+    mode?: TimerMode;
+  }
+
+  let { mode = 'pomodoro' }: Props = $props();
 
   let state = $derived($timerState);
 </script>
@@ -33,13 +40,15 @@
     {/key}
   </button>
 
-  <!-- Skip round -->
-  <button class="btn-side" onclick={timerSkip} aria-label="Skip round">
-    <svg width="10" height="10" viewBox="0 0 16 16">
-      <polygon points="1,1 10,8 1,15" fill="currentColor" />
-      <rect x="12" y="1" width="3" height="14" rx="1" fill="currentColor" />
-    </svg>
-  </button>
+  <!-- Skip round (hidden in continuous mode) -->
+  {#if mode === 'pomodoro'}
+    <button class="btn-side" onclick={timerSkip} aria-label="Skip round">
+      <svg width="10" height="10" viewBox="0 0 16 16">
+        <polygon points="1,1 10,8 1,15" fill="currentColor" />
+        <rect x="12" y="1" width="3" height="14" rx="1" fill="currentColor" />
+      </svg>
+    </button>
+  {/if}
 </div>
 
 <style>

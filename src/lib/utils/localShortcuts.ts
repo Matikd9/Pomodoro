@@ -68,7 +68,11 @@ export function createLocalShortcutHandler(state: LocalShortcutState): (e: Keybo
       timerRestartRound();
     } else if (key === s.local_shortcut_skip) {
       e.preventDefault();
-      timerSkip();
+      const currentMode =
+        typeof window !== 'undefined' ? localStorage.getItem('pomotroid_timer_mode') : 'pomodoro';
+      if (currentMode !== 'continuous') {
+        timerSkip();
+      }
     } else if (key === s.local_shortcut_volume_down) {
       e.preventDefault();
       const newVol = Math.max(0, Math.round((state.getVolume() - 0.05) * 100) / 100);

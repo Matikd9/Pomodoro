@@ -469,13 +469,40 @@ pub fn get_weekly_task_breakdown(conn: &Connection) -> Result<Vec<TaskStat>> {
 pub struct TaskItem {
     pub name: String,
     pub completed: bool,
+    #[serde(default)]
+    pub deleted: bool,
 }
 
-/// Returns the list of tasks, ensuring pending ones come first ('General' always at top),
+#[derive(Debug, Serialize, serde::Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct TaskStatsSummary {
+    pub name: String,
+    pub completed: bool,
+    pub deleted: bool,
+    #[serde(alias = "allTimeSecs")]
+    pub all_time_secs: u32,
+    #[serde(alias = "allTimeRounds")]
+    pub all_time_rounds: f32,
+    #[serde(alias = "monthSecs")]
+    pub month_secs: u32,
+    #[serde(alias = "monthRounds")]
+    pub month_rounds: f32,
+    #[serde(alias = "weekSecs")]
+    pub week_secs: u32,
+    #[serde(alias = "weekRounds")]
+    pub week_rounds: f32,
+    #[serde(alias = "todaySecs")]
+    pub today_secs: u32,
+    #[serde(alias = "todayRounds")]
+    pub today_rounds: f32,
+}
+
+/// Returns the list of active tasks (excluding soft-deleted ones), ensuring pending ones come first ('General' always at top),
 /// followed by completed ones.
 pub fn get_tasks(conn: &Connection) -> Result<Vec<TaskItem>> {
     let mut stmt = conn.prepare(
-        "SELECT name, completed FROM tasks
+        "SELECT name, completed, deleted FROM tasks
+         WHERE deleted = 0
          ORDER BY completed ASC,
                   CASE WHEN name = 'General' THEN 0 ELSE 1 END,
                   name COLLATE NOCASE ASC",
@@ -484,6 +511,7 @@ pub fn get_tasks(conn: &Connection) -> Result<Vec<TaskItem>> {
         Ok(TaskItem {
             name: r.get(0)?,
             completed: r.get::<_, i64>(1)? == 1,
+            deleted: r.get::<_, i64>(2)? == 1,
         })
     })?;
     let mut tasks = Vec::new();
@@ -491,9 +519,83 @@ pub fn get_tasks(conn: &Connection) -> Result<Vec<TaskItem>> {
         tasks.push(t);
     }
     if !tasks.iter().any(|t| t.name == "General") {
-        tasks.insert(0, TaskItem { name: "General".to_string(), completed: false });
+        tasks.insert(0, TaskItem { name: "General".to_string(), completed: false, deleted: false });
     }
     Ok(tasks)
+}
+
+/// Returns the comprehensive summary of all tasks (active, completed, deleted) with focus times and rounds
+/// across all-time, this month, this week, and today.
+pub fn get_tasks_summary(conn: &Connection) -> Result<Vec<TaskStatsSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT 
+            t.name,
+            t.completed,
+            t.deleted,
+            COALESCE(SUM(s.duration_secs), 0) AS all_time_secs,
+            COALESCE(SUM(CAST(s.duration_secs AS REAL) / CAST(CASE WHEN s.target_secs > 0 THEN s.target_secs ELSE 1500 END AS REAL)), 0.0) AS all_time_rounds,
+            COALESCE(SUM(CASE WHEN strftime('%Y-%m', datetime(s.started_at, 'unixepoch', 'localtime')) = strftime('%Y-%m', 'now', 'localtime') THEN s.duration_secs ELSE 0 END), 0) AS month_secs,
+            COALESCE(SUM(CASE WHEN strftime('%Y-%m', datetime(s.started_at, 'unixepoch', 'localtime')) = strftime('%Y-%m', 'now', 'localtime') THEN CAST(s.duration_secs AS REAL) / CAST(CASE WHEN s.target_secs > 0 THEN s.target_secs ELSE 1500 END AS REAL) ELSE 0.0 END), 0.0) AS month_rounds,
+            COALESCE(SUM(CASE WHEN date(s.started_at, 'unixepoch', 'localtime') >= date('now', 'localtime', 'weekday 0', '-6 days') AND date(s.started_at, 'unixepoch', 'localtime') <= date('now', 'localtime', 'weekday 0') THEN s.duration_secs ELSE 0 END), 0) AS week_secs,
+            COALESCE(SUM(CASE WHEN date(s.started_at, 'unixepoch', 'localtime') >= date('now', 'localtime', 'weekday 0', '-6 days') AND date(s.started_at, 'unixepoch', 'localtime') <= date('now', 'localtime', 'weekday 0') THEN CAST(s.duration_secs AS REAL) / CAST(CASE WHEN s.target_secs > 0 THEN s.target_secs ELSE 1500 END AS REAL) ELSE 0.0 END), 0.0) AS week_rounds,
+            COALESCE(SUM(CASE WHEN date(s.started_at, 'unixepoch', 'localtime') = date('now', 'localtime') THEN s.duration_secs ELSE 0 END), 0) AS today_secs,
+            COALESCE(SUM(CASE WHEN date(s.started_at, 'unixepoch', 'localtime') = date('now', 'localtime') THEN CAST(s.duration_secs AS REAL) / CAST(CASE WHEN s.target_secs > 0 THEN s.target_secs ELSE 1500 END AS REAL) ELSE 0.0 END), 0.0) AS today_rounds
+         FROM (
+             SELECT name, completed, deleted FROM tasks
+             UNION
+             SELECT DISTINCT task_name AS name, 0 AS completed, 0 AS deleted
+             FROM sessions
+             WHERE task_name != '' AND task_name NOT IN (SELECT name FROM tasks)
+         ) t
+         LEFT JOIN sessions s ON (s.task_name = t.name COLLATE NOCASE AND s.round_type = 'work' AND s.duration_secs >= 120)
+         GROUP BY t.name
+         ORDER BY 
+            t.deleted ASC,
+            t.completed ASC,
+            CASE WHEN t.name = 'General' THEN 0 ELSE 1 END,
+            all_time_secs DESC,
+            t.name COLLATE NOCASE ASC",
+    )?;
+
+    let rows = stmt.query_map([], |r| {
+        Ok(TaskStatsSummary {
+            name: r.get(0)?,
+            completed: r.get::<_, i64>(1)? == 1,
+            deleted: r.get::<_, i64>(2)? == 1,
+            all_time_secs: r.get::<_, i64>(3)? as u32,
+            all_time_rounds: r.get::<_, f64>(4)? as f32,
+            month_secs: r.get::<_, i64>(5)? as u32,
+            month_rounds: r.get::<_, f64>(6)? as f32,
+            week_secs: r.get::<_, i64>(7)? as u32,
+            week_rounds: r.get::<_, f64>(8)? as f32,
+            today_secs: r.get::<_, i64>(9)? as u32,
+            today_rounds: r.get::<_, f64>(10)? as f32,
+        })
+    })?;
+
+    let mut list = Vec::new();
+    for t in rows.flatten() {
+        list.push(t);
+    }
+    if !list.iter().any(|t| t.name == "General") {
+        list.insert(
+            0,
+            TaskStatsSummary {
+                name: "General".to_string(),
+                completed: false,
+                deleted: false,
+                all_time_secs: 0,
+                all_time_rounds: 0.0,
+                month_secs: 0,
+                month_rounds: 0.0,
+                week_secs: 0,
+                week_rounds: 0.0,
+                today_secs: 0,
+                today_rounds: 0.0,
+            },
+        );
+    }
+    Ok(list)
 }
 
 /// Creates a new task or unarchives an existing one, and returns the updated task list.
@@ -501,12 +603,58 @@ pub fn create_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
     let clean = name.trim();
     if !clean.is_empty() {
         conn.execute(
-            "INSERT INTO tasks (name, created_at, completed) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER), 0)
-             ON CONFLICT(name) DO UPDATE SET completed = 0, completed_at = NULL",
+            "INSERT INTO tasks (name, created_at, completed, deleted) VALUES (?1, CAST(strftime('%s', 'now') AS INTEGER), 0, 0)
+             ON CONFLICT(name) DO UPDATE SET completed = 0, completed_at = NULL, deleted = 0, deleted_at = NULL",
             params![clean],
         )?;
     }
     get_tasks(conn)
+}
+
+/// Renames an existing task, simultaneously updating all historical sessions and saved settings
+/// to preserve total accumulated focus hours under the new name.
+pub fn rename_task(conn: &Connection, old_name: &str, new_name: &str) -> Result<()> {
+    let old_clean = old_name.trim();
+    let new_clean = new_name.trim();
+    if old_clean.is_empty()
+        || new_clean.is_empty()
+        || old_clean == "General"
+        || new_clean == "General"
+        || old_clean == new_clean
+    {
+        return Ok(());
+    }
+
+    conn.execute_batch("BEGIN TRANSACTION;")?;
+    let rename_result: Result<()> = (|| {
+        // Update task row
+        conn.execute(
+            "UPDATE tasks SET name = ?1 WHERE name = ?2 COLLATE NOCASE",
+            params![new_clean, old_clean],
+        )?;
+        // Update historical sessions to keep accumulated hours
+        conn.execute(
+            "UPDATE sessions SET task_name = ?1 WHERE task_name = ?2 COLLATE NOCASE",
+            params![new_clean, old_clean],
+        )?;
+        // Update setting if it was the selected task
+        conn.execute(
+            "UPDATE settings SET value = ?1 WHERE key = 'last_task_name' AND value = ?2 COLLATE NOCASE",
+            params![new_clean, old_clean],
+        )?;
+        Ok(())
+    })();
+
+    match rename_result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT;")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        }
+    }
 }
 
 /// Marks a task as completed or restores it to active. 'General' cannot be completed.
@@ -521,11 +669,26 @@ pub fn toggle_task_complete(conn: &Connection, name: &str, completed: bool) -> R
     get_tasks(conn)
 }
 
-/// Deletes a task from the database. 'General' cannot be deleted.
+/// Soft-deletes a task from active view and moves it to deleted tasks section. 'General' cannot be deleted.
 pub fn delete_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
     let clean = name.trim();
     if clean != "General" && !clean.is_empty() {
-        conn.execute("DELETE FROM tasks WHERE name = ?1", params![clean])?;
+        conn.execute(
+            "UPDATE tasks SET deleted = 1, deleted_at = CAST(strftime('%s', 'now') AS INTEGER) WHERE name = ?1",
+            params![clean],
+        )?;
+    }
+    get_tasks(conn)
+}
+
+/// Restores a soft-deleted task back to active.
+pub fn restore_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
+    let clean = name.trim();
+    if !clean.is_empty() {
+        conn.execute(
+            "UPDATE tasks SET deleted = 0, deleted_at = NULL WHERE name = ?1",
+            params![clean],
+        )?;
     }
     get_tasks(conn)
 }
@@ -782,7 +945,7 @@ mod tests {
     fn tasks_management_and_defaults() {
         let conn = setup();
         let tasks = get_tasks(&conn).unwrap();
-        assert_eq!(tasks, vec![TaskItem { name: "General".to_string(), completed: false }]);
+        assert_eq!(tasks, vec![TaskItem { name: "General".to_string(), completed: false, deleted: false }]);
 
         create_task(&conn, "Math").unwrap();
         create_task(&conn, "Physics").unwrap();
@@ -799,9 +962,25 @@ mod tests {
         let math = after_complete.iter().find(|t| t.name == "Math").unwrap();
         assert!(math.completed);
 
-        // Delete Math
+        // Rename Physics -> Chemistry
+        rename_task(&conn, "Physics", "Chemistry").unwrap();
+        let after_rename = get_tasks(&conn).unwrap();
+        assert!(after_rename.iter().any(|t| t.name == "Chemistry"));
+        assert!(!after_rename.iter().any(|t| t.name == "Physics"));
+
+        // Delete Math (soft delete)
         let after_delete = delete_task(&conn, "Math").unwrap();
         assert!(!after_delete.iter().any(|t| t.name == "Math"));
+
+        // Restore Math
+        let after_restore = restore_task(&conn, "Math").unwrap();
+        assert!(after_restore.iter().any(|t| t.name == "Math"));
+
+        // Summary
+        let summary = get_tasks_summary(&conn).unwrap();
+        assert!(summary.iter().any(|t| t.name == "Math"));
+        assert!(summary.iter().any(|t| t.name == "Chemistry"));
+        assert!(summary.iter().any(|t| t.name == "General"));
     }
 
     #[test]

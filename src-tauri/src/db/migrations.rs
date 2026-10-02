@@ -121,6 +121,30 @@ const MIGRATION_9: &str = "
     INSERT INTO schema_version VALUES (9);
 ";
 
+/// Adds `deleted` and `deleted_at` to `tasks` table to allow soft-deleting tasks,
+/// and populates deleted tasks from any orphaned task names in sessions.
+const MIGRATION_10: &str = "
+    ALTER TABLE tasks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE tasks ADD COLUMN deleted_at INTEGER;
+    INSERT OR IGNORE INTO tasks (name, created_at, completed, deleted, deleted_at)
+        SELECT DISTINCT task_name, min(started_at), 0, 0, NULL
+        FROM sessions
+        WHERE task_name != '' AND task_name NOT IN (SELECT name FROM tasks);
+    INSERT INTO schema_version VALUES (10);
+";
+
+/// Restores any historical tasks that were erroneously marked as deleted,
+/// and ensures all tasks with recorded sessions are active (deleted = 0).
+const MIGRATION_11: &str = "
+    UPDATE tasks SET deleted = 0, deleted_at = NULL 
+    WHERE name IN (SELECT DISTINCT task_name FROM sessions WHERE task_name != '');
+    INSERT OR IGNORE INTO tasks (name, created_at, completed, deleted, deleted_at)
+        SELECT DISTINCT task_name, min(started_at), 0, 0, NULL
+        FROM sessions
+        WHERE task_name != '' AND task_name NOT IN (SELECT name FROM tasks);
+    INSERT INTO schema_version VALUES (11);
+";
+
 /// Apply any pending migrations. Each migration is wrapped in a transaction
 /// so a partial failure leaves the database unchanged.
 pub fn run(conn: &Connection) -> Result<()> {
@@ -180,6 +204,18 @@ pub fn run(conn: &Connection) -> Result<()> {
         log::info!("[db/migrations] MIGRATION_9 complete");
     }
 
+    if version < 10 {
+        log::info!("[db/migrations] applying MIGRATION_10: add deleted and deleted_at to tasks table");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_10} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_10 complete");
+    }
+
+    if version < 11 {
+        log::info!("[db/migrations] applying MIGRATION_11: restore session tasks to active");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_11} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_11 complete");
+    }
+
     Ok(())
 }
 
@@ -215,7 +251,7 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 9);
+        assert_eq!(v, 11);
     }
 
     #[test]

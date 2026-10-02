@@ -16,29 +16,25 @@ import type {
   HeatmapStats,
   UpdateInfo,
   TaskItem,
+  TaskStatsSummary,
   ObsidianExportResult,
 } from '$lib/types';
 
 // --- Remote Server Configuration ---
 
 const REMOTE_URL_KEY = 'pomotroid_remote_url';
+export const DEFAULT_REMOTE_URL = 'http://100.64.60.57:8085';
 
 export function getRemoteServerUrl(): string | null {
   if (typeof window === 'undefined') return null;
-  const configured = localStorage.getItem(REMOTE_URL_KEY)?.trim();
-  if (configured) {
-    return configured.replace(/\/+$/, '');
+  const configured = localStorage.getItem(REMOTE_URL_KEY);
+  if (configured !== null) {
+    const trimmed = configured.trim();
+    if (!trimmed) return null; // Explicitly set to empty by user for local mode
+    return trimmed.replace(/\/+$/, '');
   }
-  // If running in Tauri or serving from tauri origin, never use origin as remote server
-  if (
-    isTauri ||
-    window.location.hostname === 'tauri.localhost' ||
-    window.location.protocol === 'tauri:'
-  ) {
-    return null;
-  }
-  // When running in a standard web browser (e.g. mobile phone), use current origin
-  return window.location.origin;
+  // Default to user's Tailscale server
+  return DEFAULT_REMOTE_URL;
 }
 
 export function setRemoteServerUrl(url: string | null): void {
@@ -74,6 +70,10 @@ async function remoteFetch<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     throw new Error(`Remote API request to ${path} failed with status ${res.status}`);
+  }
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Remote API request to ${path} returned non-JSON content: ${contentType}`);
   }
   return res.json() as Promise<T>;
 }
@@ -239,7 +239,7 @@ export const timerSetTask = async (task: string) => {
 
 export function normalizeTask(item: unknown): TaskItem {
   if (typeof item === 'string') {
-    return { name: item, completed: false };
+    return { name: item, completed: false, deleted: false };
   }
   if (item && typeof item === 'object') {
     const obj = item as Record<string, unknown>;
@@ -247,9 +247,43 @@ export function normalizeTask(item: unknown): TaskItem {
     return {
       name: name || 'General',
       completed: Boolean(obj.completed),
+      deleted: Boolean(obj.deleted),
     };
   }
-  return { name: String(item ?? 'General'), completed: false };
+  return { name: String(item ?? 'General'), completed: false, deleted: false };
+}
+
+export function normalizeTaskStatsSummary(item: unknown): TaskStatsSummary {
+  if (!item || typeof item !== 'object') {
+    return {
+      name: 'General',
+      completed: false,
+      deleted: false,
+      all_time_secs: 0,
+      all_time_rounds: 0,
+      month_secs: 0,
+      month_rounds: 0,
+      week_secs: 0,
+      week_rounds: 0,
+      today_secs: 0,
+      today_rounds: 0,
+    };
+  }
+  const obj = item as Record<string, unknown>;
+  const name = typeof obj.name === 'string' ? obj.name : String(obj.name ?? 'General');
+  return {
+    name: name || 'General',
+    completed: Boolean(obj.completed),
+    deleted: Boolean(obj.deleted),
+    all_time_secs: Number(obj.all_time_secs ?? obj.allTimeSecs ?? 0),
+    all_time_rounds: Number(obj.all_time_rounds ?? obj.allTimeRounds ?? 0),
+    month_secs: Number(obj.month_secs ?? obj.monthSecs ?? 0),
+    month_rounds: Number(obj.month_rounds ?? obj.monthRounds ?? 0),
+    week_secs: Number(obj.week_secs ?? obj.weekSecs ?? 0),
+    week_rounds: Number(obj.week_rounds ?? obj.weekRounds ?? 0),
+    today_secs: Number(obj.today_secs ?? obj.todaySecs ?? 0),
+    today_rounds: Number(obj.today_rounds ?? obj.todayRounds ?? 0),
+  };
 }
 
 export const tasksList = async (): Promise<TaskItem[]> => {
@@ -270,9 +304,179 @@ export const tasksList = async (): Promise<TaskItem[]> => {
   }
   const list = (Array.isArray(raw) ? raw : []).map(normalizeTask);
   if (!list.some((t) => t.name === 'General')) {
-    list.unshift({ name: 'General', completed: false });
+    list.unshift({ name: 'General', completed: false, deleted: false });
   }
   return list;
+};
+
+export const tasksGetSummary = async (): Promise<TaskStatsSummary[]> => {
+  if (isRemoteMode()) {
+    try {
+      const res = await remoteFetch<unknown[]>('/api/tasks/summary');
+      if (Array.isArray(res) && res.length > 0) {
+        return res.map(normalizeTaskStatsSummary);
+      }
+    } catch {
+      // Remote server does not support /api/tasks/summary yet, calculate robustly from available endpoints
+    }
+
+    try {
+      const [rawTasks, detailed, currentWeek, ...pastWeeks] = await Promise.all([
+        tasksList().catch(() => []),
+        statsGetDetailed().catch(() => null),
+        statsGetWeeklyByOffset(0).catch(() => null),
+        statsGetWeeklyByOffset(-1).catch(() => null),
+        statsGetWeeklyByOffset(-2).catch(() => null),
+        statsGetWeeklyByOffset(-3).catch(() => null),
+        statsGetWeeklyByOffset(-4).catch(() => null),
+        statsGetWeeklyByOffset(-5).catch(() => null),
+        statsGetWeeklyByOffset(-6).catch(() => null),
+        statsGetWeeklyByOffset(-7).catch(() => null),
+        statsGetWeeklyByOffset(-8).catch(() => null),
+      ]);
+
+      const allWeeks = [currentWeek, ...pastWeeks].filter(Boolean) as CalendarWeekStats[];
+      const summaryMap = new Map<string, TaskStatsSummary>();
+
+      const ensureTask = (name: string, completed = false, deleted = false): TaskStatsSummary => {
+        const clean = name.trim() || 'General';
+        let existing = summaryMap.get(clean);
+        if (!existing) {
+          existing = {
+            name: clean,
+            completed,
+            deleted,
+            all_time_secs: 0,
+            all_time_rounds: 0,
+            month_secs: 0,
+            month_rounds: 0,
+            week_secs: 0,
+            week_rounds: 0,
+            today_secs: 0,
+            today_rounds: 0,
+          };
+          summaryMap.set(clean, existing);
+        } else {
+          if (completed) existing.completed = true;
+          if (deleted) existing.deleted = true;
+        }
+        return existing;
+      };
+
+      // Always ensure 'General' exists
+      ensureTask('General');
+
+      // Initialize from tasks list
+      if (Array.isArray(rawTasks)) {
+        for (const t of rawTasks) {
+          ensureTask(t.name, t.completed, t.deleted ?? false);
+        }
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const extractStat = (item: any): { name: string; secs: number; rounds: number } => {
+        const name = (item.task_name ?? item.task ?? item.name ?? 'General').trim() || 'General';
+        const secs = Number(item.focus_secs ?? item.total_secs ?? item.duration_secs ?? 0);
+        const rounds = Number(item.rounds ?? item.total_rounds ?? item.completed_rounds ?? 0);
+        return { name, secs, rounds };
+      };
+
+      // 1. Accumulate Today's sessions
+      if (detailed?.today?.task_breakdown && Array.isArray(detailed.today.task_breakdown)) {
+        for (const tb of detailed.today.task_breakdown) {
+          const { name, secs, rounds } = extractStat(tb);
+          const task = ensureTask(name);
+          task.today_secs += secs;
+          task.today_rounds += rounds;
+        }
+      }
+
+      // 2. Accumulate Calendar Weeks (week 0 is this week, others contribute to month / all_time)
+      const now = new Date();
+      const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      allWeeks.forEach((weekObj, index) => {
+        if (!weekObj || !Array.isArray(weekObj.tasks)) return;
+        const isThisWeek = index === 0;
+        const isThisMonth =
+          (typeof weekObj.start_date === 'string' && weekObj.start_date.startsWith(currentYearMonth)) ||
+          (typeof weekObj.end_date === 'string' && weekObj.end_date.startsWith(currentYearMonth));
+
+        for (const t of weekObj.tasks) {
+          const { name, secs, rounds } = extractStat(t);
+          const task = ensureTask(name);
+
+          task.all_time_secs += secs;
+          task.all_time_rounds += rounds;
+
+          if (isThisMonth) {
+            task.month_secs += secs;
+            task.month_rounds += rounds;
+          }
+
+          if (isThisWeek) {
+            task.week_secs += secs;
+            task.week_rounds += rounds;
+          }
+        }
+      });
+
+      // 3. Fallback check: if weekObj.tasks missed any tasks present in detailed.week_tasks
+      if (detailed?.week_tasks && Array.isArray(detailed.week_tasks)) {
+        for (const wt of detailed.week_tasks) {
+          const { name, secs, rounds } = extractStat(wt);
+          const task = ensureTask(name);
+          if (task.week_secs === 0 && secs > 0) {
+            task.week_secs = secs;
+            task.week_rounds = rounds;
+          }
+          if (task.all_time_secs === 0 && secs > 0) {
+            task.all_time_secs = secs;
+            task.all_time_rounds = rounds;
+          }
+          if (task.month_secs === 0 && secs > 0) {
+            task.month_secs = secs;
+            task.month_rounds = rounds;
+          }
+        }
+      }
+
+      // 4. Ensure today's hours are included in all_time if all_time was otherwise 0
+      for (const task of summaryMap.values()) {
+        if (task.all_time_secs < task.week_secs) {
+          task.all_time_secs = task.week_secs;
+          task.all_time_rounds = task.week_rounds;
+        }
+        if (task.all_time_secs < task.today_secs) {
+          task.all_time_secs = task.today_secs;
+          task.all_time_rounds = task.today_rounds;
+        }
+        if (task.month_secs < task.week_secs) {
+          task.month_secs = task.week_secs;
+          task.month_rounds = task.week_rounds;
+        }
+      }
+
+      const list = Array.from(summaryMap.values());
+      list.sort((a, b) => {
+        if (a.name === 'General') return -1;
+        if (b.name === 'General') return 1;
+        return b.all_time_secs - a.all_time_secs;
+      });
+      return list;
+    } catch (fallbackErr) {
+      console.warn('Fallback remote task summary computation failed:', fallbackErr);
+    }
+
+    if (isTauri) {
+      const raw = await invoke<unknown[]>('tasks_get_summary');
+      return (Array.isArray(raw) ? raw : []).map(normalizeTaskStatsSummary);
+    }
+    return [];
+  }
+
+  const raw = await invoke<unknown[]>('tasks_get_summary');
+  return (Array.isArray(raw) ? raw : []).map(normalizeTaskStatsSummary);
 };
 
 export const tasksCreate = async (name: string): Promise<TaskItem[]> => {
@@ -294,6 +498,51 @@ export const tasksCreate = async (name: string): Promise<TaskItem[]> => {
     raw = await invoke<unknown[]>('tasks_create', { name });
   }
   return (Array.isArray(raw) ? raw : []).map(normalizeTask);
+};
+
+export const tasksRename = async (oldName: string, newName: string): Promise<TaskStatsSummary[]> => {
+  if (isRemoteMode()) {
+    try {
+      const res = await remoteFetch<unknown[]>('/api/tasks/rename', {
+        method: 'POST',
+        body: JSON.stringify({ old_name: oldName, new_name: newName }),
+      });
+      return (Array.isArray(res) ? res : []).map(normalizeTaskStatsSummary);
+    } catch (e) {
+      console.warn('Remote /api/tasks/rename failed or not supported yet, falling back:', e);
+      try {
+        await tasksCreate(newName);
+        await tasksDelete(oldName);
+      } catch (fallbackErr) {
+        console.warn('Fallback rename failed:', fallbackErr);
+      }
+      return tasksGetSummary();
+    }
+  }
+  const raw = await invoke<unknown[]>('tasks_rename', { oldName, newName });
+  return (Array.isArray(raw) ? raw : []).map(normalizeTaskStatsSummary);
+};
+
+export const tasksRestore = async (name: string): Promise<TaskStatsSummary[]> => {
+  if (isRemoteMode()) {
+    try {
+      const res = await remoteFetch<unknown[]>('/api/tasks/restore', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      return (Array.isArray(res) ? res : []).map(normalizeTaskStatsSummary);
+    } catch (e) {
+      console.warn('Remote /api/tasks/restore failed or not supported yet, falling back to create:', e);
+      try {
+        await tasksCreate(name);
+      } catch (fallbackErr) {
+        console.warn('Fallback restore failed:', fallbackErr);
+      }
+      return tasksGetSummary();
+    }
+  }
+  const raw = await invoke<unknown[]>('tasks_restore', { name });
+  return (Array.isArray(raw) ? raw : []).map(normalizeTaskStatsSummary);
 };
 
 export const tasksToggleComplete = async (name: string, completed: boolean): Promise<TaskItem[]> => {

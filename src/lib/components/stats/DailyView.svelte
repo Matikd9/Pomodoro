@@ -29,7 +29,7 @@
   }
 
   let selectedDate = $state<Date>(new Date());
-  let currentDaily = $state<DailyStats | null>(today);
+  let currentDaily = $state<DailyStats | null>(null);
   let isLoading = $state(false);
 
   // Sync with prop when viewing today
@@ -173,7 +173,7 @@
   </div>
 
   <!-- Hourly breakdown -->
-  <div class="section">
+  <div class="chart-section">
     <div class="section-header">
       <span class="section-title">{m.stats_sessions_by_hour()}</span>
       {#if !hasData}
@@ -205,7 +205,11 @@
             class="bar"
             class:bar-empty={count === 0}
             style="--bar-scale: {barH / CHART_H}; --bar-delay: {h * 18}ms"
-          />
+          >
+            {#if count > 0}
+              <title>{h}:00 – {fmtRounds(count)} {m.stats_rounds().toLowerCase()}</title>
+            {/if}
+          </rect>
 
           <!-- Hour label (every 6 hours) -->
           {#if hourLabels.includes(h)}
@@ -223,7 +227,7 @@
 
   <!-- Task breakdown -->
   {#if currentDaily && currentDaily.task_breakdown && currentDaily.task_breakdown.length > 0}
-    <div class="section tasks-section">
+    <div class="tasks-section">
       <div class="section-header">
         <span class="section-title">{m.stats_tasks_breakdown()}</span>
       </div>
@@ -251,7 +255,7 @@
     display: flex;
     flex-direction: column;
     gap: 0;
-    height: 100%;
+    min-height: 100%;
     padding: 0;
     animation: app-fade-in 0.2s ease;
   }
@@ -320,6 +324,7 @@
     display: flex;
     align-items: stretch;
     border-bottom: 1px solid var(--color-separator);
+    flex-shrink: 0;
   }
 
   .card {
@@ -329,7 +334,7 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 28px 24px;
+    padding: 20px 24px;
     animation: card-rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
     animation-delay: var(--delay, 0ms);
   }
@@ -369,14 +374,14 @@
     margin: 12px 0;
   }
 
-  /* ── Section ─────────────────────────────────────────────── */
-  .section {
+  /* ── Hourly chart section ────────────────────────────────── */
+  .chart-section {
     flex: 1;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    padding: 20px 24px 16px;
+    padding: 16px 24px 14px;
     gap: 12px;
-    overflow: hidden;
   }
 
   .section-header {
@@ -402,11 +407,11 @@
   /* ── Hourly chart ────────────────────────────────────────── */
   .chart-wrap {
     overflow-x: auto;
-    overflow-y: hidden;
   }
 
   .chart {
     display: block;
+    overflow: visible;
   }
 
   .bar {
@@ -449,8 +454,11 @@
   /* ── Task breakdown ────────────────────────────────────────── */
   .tasks-section {
     border-top: 1px solid var(--color-separator);
-    padding: 16px 24px 24px;
+    padding: 16px 24px 20px;
+    display: flex;
+    flex-direction: column;
     gap: 12px;
+    flex-shrink: 0;
   }
 
   .tasks-list {

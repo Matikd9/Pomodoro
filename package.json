@@ -41,5 +41,11 @@
     "svelte-check": "^4.6.0",
     "typescript": "~6.0.3",
     "vite": "^8.0.16"
+  },
+  "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "^1.0.3",
+    "@rolldown/binding-win32-x64-msvc": "1.0.3",
+    "@tauri-apps/cli-linux-x64-gnu": "^2.12.1",
+    "@tauri-apps/cli-win32-x64-msvc": "^2.12.1"
   }
 }

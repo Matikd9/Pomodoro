@@ -21,11 +21,12 @@
   import * as m from '$paraglide/messages.js';
   import { logInfo as info, logError } from '$lib/utils/log';
 
+  import TasksView from '$lib/components/stats/TasksView.svelte';
   import DailyView from '$lib/components/stats/DailyView.svelte';
   import WeeklyView from '$lib/components/stats/WeeklyView.svelte';
   import YearlyView from '$lib/components/stats/YearlyView.svelte';
 
-  type Tab = 'today' | 'week' | 'alltime';
+  type Tab = 'tasks' | 'today' | 'week' | 'alltime';
 
   let activeTab = $state<Tab>('today');
   let detailed = $state<DetailedStats | null>(null);
@@ -167,6 +168,9 @@
 
   <!-- Tab bar -->
   <div class="tabs">
+    <button class="tab" class:active={activeTab === 'tasks'} onclick={() => switchTab('tasks')}
+      >{m.stats_tab_tasks()}</button
+    >
     <button class="tab" class:active={activeTab === 'today'} onclick={() => switchTab('today')}
       >{m.stats_tab_today()}</button
     >
@@ -180,7 +184,9 @@
 
   <!-- Content -->
   <div class="content">
-    {#if activeTab === 'today'}
+    {#if activeTab === 'tasks'}
+      <TasksView />
+    {:else if activeTab === 'today'}
       <DailyView today={detailed?.today ?? null} />
     {:else if activeTab === 'week'}
       <WeeklyView
@@ -260,6 +266,12 @@
     border-bottom: 1px solid var(--color-separator);
     flex-shrink: 0;
     padding: 0 24px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .tab {

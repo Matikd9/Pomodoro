@@ -198,10 +198,10 @@
   <style>
     :root {
       --heat-0: color-mix(in oklch, var(--color-foreground) 6%, var(--color-background));
-      --heat-1: color-mix(in oklch, var(--color-focus-round) 25%, var(--color-background));
-      --heat-2: color-mix(in oklch, var(--color-focus-round) 50%, var(--color-background));
-      --heat-3: color-mix(in oklch, var(--color-focus-round) 75%, var(--color-background));
-      --heat-4: var(--color-focus-round);
+      --heat-1: #E34234;
+      --heat-2: #FF2400;
+      --heat-3: #DC143C;
+      --heat-4: #FF0000;
     }
   </style>
 </svelte:head>

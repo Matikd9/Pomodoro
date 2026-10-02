@@ -1,6 +1,7 @@
 // Shared TypeScript types mirroring Rust structs (must stay in sync with Rust serde output).
 
 export type RoundType = 'work' | 'short-break' | 'long-break';
+export type TimerMode = 'pomodoro' | 'continuous';
 
 /** Mirrors Rust `TimerSnapshot` — emitted via timer:tick / timer:round-change events
  *  and returned by the `timer_get_state` IPC command. */
@@ -145,6 +146,21 @@ export interface HeatmapStats {
 export interface TaskItem {
   name: string;
   completed: boolean;
+  deleted?: boolean;
+}
+
+export interface TaskStatsSummary {
+  name: string;
+  completed: boolean;
+  deleted: boolean;
+  all_time_secs: number;
+  all_time_rounds: number;
+  month_secs: number;
+  month_rounds: number;
+  week_secs: number;
+  week_rounds: number;
+  today_secs: number;
+  today_rounds: number;
 }
 
 export interface ObsidianExportResult {
