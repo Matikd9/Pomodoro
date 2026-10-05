@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![allow(dependency_on_unit_never_type_fallback)]
+
 pub mod audio;
 pub mod commands;
 pub mod db;
@@ -33,11 +36,13 @@ use commands::{
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
     tasks_list, tasks_get_summary, tasks_create, tasks_rename, tasks_toggle_complete, tasks_delete, tasks_restore,
+    presets_list, presets_create, presets_update, presets_delete,
     obsidian_export_weekly, obsidian_save_file,
     window_set_visibility,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(dependency_on_unit_never_type_fallback)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(

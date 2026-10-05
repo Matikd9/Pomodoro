@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![allow(dependency_on_unit_never_type_fallback)]
+
 /// All #[tauri::command] functions exposed to the Svelte frontend via Tauri IPC.
 ///
 /// Commands are grouped by domain: Timer, Settings, Themes, Stats.
