@@ -1,8 +1,9 @@
 <script lang="ts">
   import '../../app.css';
   import { onMount } from 'svelte';
-  import { getSettings, getThemes, onSettingsChanged, onThemesChanged } from '$lib/ipc';
+  import { getSettings, getThemes, onSettingsChanged, onThemesChanged, onPresetsChanged } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
+  import { loadPresets, presets } from '$lib/stores/presets';
   import { applyTheme } from '$lib/stores/theme';
   import { resolveThemeName } from '$lib/utils/theme';
   import { setLocale } from '$lib/locale.svelte.js';
@@ -67,6 +68,7 @@
         const s = await getSettings();
         settings.set(s);
         localVolume = s.volume;
+        loadPresets().catch(() => {});
 
         // Apply the stored locale on mount.
         setLocale(s.language);
@@ -125,6 +127,9 @@
           const current =
             updated.find((t) => t.name === resolveThemeName($settings, dark)) ?? updated[0];
           if (current) applyTheme(current);
+        }),
+        await onPresetsChanged((updated) => {
+          presets.set(updated);
         })
       );
     })();

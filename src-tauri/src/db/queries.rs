@@ -742,6 +742,25 @@ pub fn get_presets(conn: &Connection) -> Result<Vec<PresetItem>> {
     Ok(list)
 }
 
+pub fn get_preset_by_name(conn: &Connection, name: &str) -> Result<PresetItem> {
+    conn.query_row(
+        "SELECT id, name, work_secs, short_break_secs, long_break_secs, rounds
+         FROM presets
+         WHERE name = ?1",
+        [name],
+        |row| {
+            Ok(PresetItem {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                work_secs: row.get(2)?,
+                short_break_secs: row.get(3)?,
+                long_break_secs: row.get(4)?,
+                rounds: row.get(5)?,
+            })
+        },
+    )
+}
+
 pub fn create_preset(
     conn: &Connection,
     name: &str,

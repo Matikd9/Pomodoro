@@ -473,6 +473,60 @@ pub fn presets_list(db: State<'_, DbState>) -> Result<Vec<queries::PresetItem>, 
     queries::get_presets(&conn).map_err(|e| e.to_string())
 }
 
+/// Selects an active preset by name, atomically updates settings (active_preset, durations, rounds),
+/// reconfigures timer engine, emits `settings:changed`, and returns the updated Settings.
+#[tauri::command]
+pub fn presets_select(
+    name: String,
+    db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+    app: AppHandle,
+) -> Result<Settings, String> {
+    log::info!("[presets] selecting preset: {}", name);
+    let new_settings = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        let preset = queries::get_preset_by_name(&conn, &name).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('active_preset', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.name],
+        ).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_work_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.work_secs.to_string()],
+        ).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_short_break_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.short_break_secs.to_string()],
+        ).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_long_break_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.long_break_secs.to_string()],
+        ).map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('work_rounds', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.rounds.to_string()],
+        ).map_err(|e| e.to_string())?;
+
+        settings::load(&conn).map_err(|e| e.to_string())?
+    };
+
+    timer.apply_settings(new_settings.clone());
+    app.emit("timer:reset", &timer.get_snapshot()).ok();
+    app.emit("settings:changed", &new_settings).ok();
+
+    Ok(new_settings)
+}
+
 /// Creates or updates a preset by name and returns the updated presets list.
 #[tauri::command]
 pub fn presets_create(
@@ -482,10 +536,13 @@ pub fn presets_create(
     long_break_secs: u32,
     rounds: u32,
     db: State<'_, DbState>,
+    app: AppHandle,
 ) -> Result<Vec<queries::PresetItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
-    queries::create_preset(&conn, &name, work_secs, short_break_secs, long_break_secs, rounds)
-        .map_err(|e| e.to_string())
+    let list = queries::create_preset(&conn, &name, work_secs, short_break_secs, long_break_secs, rounds)
+        .map_err(|e| e.to_string())?;
+    app.emit("presets:changed", &list).ok();
+    Ok(list)
 }
 
 /// Updates an existing preset by ID and returns the updated presets list.
@@ -498,10 +555,13 @@ pub fn presets_update(
     long_break_secs: u32,
     rounds: u32,
     db: State<'_, DbState>,
+    app: AppHandle,
 ) -> Result<Vec<queries::PresetItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
-    queries::update_preset(&conn, id, &name, work_secs, short_break_secs, long_break_secs, rounds)
-        .map_err(|e| e.to_string())
+    let list = queries::update_preset(&conn, id, &name, work_secs, short_break_secs, long_break_secs, rounds)
+        .map_err(|e| e.to_string())?;
+    app.emit("presets:changed", &list).ok();
+    Ok(list)
 }
 
 /// Deletes a preset by ID (protecting Default) and returns the updated presets list.
@@ -509,9 +569,12 @@ pub fn presets_update(
 pub fn presets_delete(
     id: i64,
     db: State<'_, DbState>,
+    app: AppHandle,
 ) -> Result<Vec<queries::PresetItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
-    queries::delete_preset(&conn, id).map_err(|e| e.to_string())
+    let list = queries::delete_preset(&conn, id).map_err(|e| e.to_string())?;
+    app.emit("presets:changed", &list).ok();
+    Ok(list)
 }
 
 /// Exports the weekly Pomodoro report to Obsidian Markdown.

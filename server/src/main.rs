@@ -92,6 +92,7 @@ pub enum WsEvent {
     Reset { payload: TimerSnapshot },
     SettingsChanged { payload: Settings },
     SessionsCleared,
+    PresetsChanged { payload: Vec<queries::PresetItem> },
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +442,7 @@ async fn main() {
         .route("/api/tasks/complete", post(api_tasks_complete))
         .route("/api/tasks/delete", post(api_tasks_delete))
         .route("/api/presets", get(api_presets_list).post(api_presets_create))
+        .route("/api/presets/select", post(api_presets_select))
         .route("/api/presets/update", post(api_presets_update))
         .route("/api/presets/delete", post(api_presets_delete))
         .route("/api/export/obsidian", post(api_export_obsidian))
@@ -685,6 +687,7 @@ async fn api_presets_create(
         req.rounds,
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _ = ctl.broadcast_tx.send(WsEvent::PresetsChanged { payload: presets.clone() });
     Ok(Json(presets))
 }
 
@@ -713,6 +716,7 @@ async fn api_presets_update(
         req.rounds,
     )
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _ = ctl.broadcast_tx.send(WsEvent::PresetsChanged { payload: presets.clone() });
     Ok(Json(presets))
 }
 
@@ -728,7 +732,67 @@ async fn api_presets_delete(
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let presets = queries::delete_preset(&conn, req.id)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _ = ctl.broadcast_tx.send(WsEvent::PresetsChanged { payload: presets.clone() });
     Ok(Json(presets))
+}
+
+#[derive(Deserialize)]
+struct SelectPresetReq {
+    name: String,
+}
+
+async fn api_presets_select(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<SelectPresetReq>,
+) -> Result<Json<Settings>, StatusCode> {
+    let updated = {
+        let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let preset = queries::get_preset_by_name(&conn, &req.name)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('active_preset', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.name],
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_work_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.work_secs.to_string()],
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_short_break_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.short_break_secs.to_string()],
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('time_long_break_secs', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.long_break_secs.to_string()],
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('work_rounds', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![preset.rounds.to_string()],
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        settings::load(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
+
+    *ctl.settings.lock().unwrap() = updated.clone();
+    ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
+    let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
+    ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+
+    let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });
+    let snap = ctl.get_snapshot();
+    let _ = ctl.broadcast_tx.send(WsEvent::Reset { payload: snap });
+
+    Ok(Json(updated))
 }
 
 #[derive(Deserialize)]

@@ -36,7 +36,7 @@ use commands::{
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
     tasks_list, tasks_get_summary, tasks_create, tasks_rename, tasks_toggle_complete, tasks_delete, tasks_restore,
-    presets_list, presets_create, presets_update, presets_delete,
+    presets_list, presets_create, presets_update, presets_delete, presets_select,
     obsidian_export_weekly, obsidian_save_file,
     window_set_visibility,
 };
@@ -406,6 +406,7 @@ pub fn run() {
             presets_create,
             presets_update,
             presets_delete,
+            presets_select,
             // Obsidian
             obsidian_export_weekly,
             obsidian_save_file,

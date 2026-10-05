@@ -40,4 +40,5 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("local_shortcut_mute", "m"),
     ("local_shortcut_fullscreen", "F11"),
     ("weekly_goal_hours", "15"),
+    ("active_preset", "Default"),
 ];

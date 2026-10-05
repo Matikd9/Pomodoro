@@ -138,6 +138,7 @@ function ensureWebSocket() {
         } else if (type === 'reset') emitWs('timer:reset', payload);
         else if (type === 'settingsChanged') emitWs('settings:changed', payload);
         else if (type === 'sessionsCleared') emitWs('sessions:cleared', undefined);
+        else if (type === 'presetsChanged') emitWs('presets:changed', payload);
       } catch (e) {
         console.error('Failed to parse WS message', e);
       }
@@ -737,6 +738,24 @@ export const presetsDelete = async (id: number): Promise<PresetItem[]> => {
   return (Array.isArray(raw) ? raw : []).map(normalizePreset);
 };
 
+export const presetsSelect = async (name: string): Promise<Settings> => {
+  if (isRemoteMode()) {
+    try {
+      return await remoteFetch<Settings>('/api/presets/select', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+    } catch (e) {
+      console.warn('Remote server may not support /api/presets/select yet:', e);
+      if (isTauri) {
+        return invoke<Settings>('presets_select', { name });
+      }
+      throw e;
+    }
+  }
+  return invoke<Settings>('presets_select', { name });
+};
+
 // --- Obsidian commands ---
 
 export const obsidianExportWeekly = async (weekOffset = 0): Promise<ObsidianExportResult> => {
@@ -1040,4 +1059,11 @@ export const onSessionsCleared = (cb: () => void): Promise<UnlistenFn> => {
     return Promise.resolve(addWsListener('sessions:cleared', cb));
   }
   return listen<void>('sessions:cleared', () => cb());
+};
+
+export const onPresetsChanged = (cb: (presets: PresetItem[]) => void): Promise<UnlistenFn> => {
+  if (isRemoteMode()) {
+    return Promise.resolve(addWsListener('presets:changed', cb));
+  }
+  return listen<PresetItem[]>('presets:changed', (e) => cb(e.payload));
 };

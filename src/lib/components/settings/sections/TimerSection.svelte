@@ -1,5 +1,6 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings';
+  import { activePreset, syncActivePresetWithSettings } from '$lib/stores/presets';
   import { setSetting } from '$lib/ipc';
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import * as m from '$paraglide/messages.js';
@@ -54,6 +55,16 @@
   async function handleChange(dbKey: string, rawValue: number) {
     const updated = await setSetting(dbKey, String(rawValue));
     settings.set(updated);
+
+    if (dbKey === 'time_work_secs') {
+      syncActivePresetWithSettings({ work_secs: rawValue });
+    } else if (dbKey === 'time_short_break_secs') {
+      syncActivePresetWithSettings({ short_break_secs: rawValue });
+    } else if (dbKey === 'time_long_break_secs') {
+      syncActivePresetWithSettings({ long_break_secs: rawValue });
+    } else if (dbKey === 'work_rounds') {
+      syncActivePresetWithSettings({ rounds: rawValue });
+    }
   }
 
   async function toggle(dbKey: string, current: boolean) {
@@ -84,6 +95,17 @@
 </script>
 
 <div class="section">
+  <!-- Active Preset Indicator -->
+  <div class="active-preset-banner">
+    <div class="active-preset-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+      <span>{m.preset_editing_indicator({ name: $activePreset?.name || 'Default' })}</span>
+    </div>
+  </div>
+
   <!-- Focus -->
   <div class="slider-row">
     <div class="slider-meta">
@@ -457,5 +479,24 @@
   .break-body.disabled {
     opacity: 0.4;
     pointer-events: none;
+  }
+
+  .active-preset-banner {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .active-preset-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--color-focus-round) 12%, transparent);
+    border: 1px solid color-mix(in oklch, var(--color-focus-round) 25%, transparent);
+    color: var(--color-focus-round);
+    font-size: 0.72rem;
+    font-weight: 600;
   }
 </style>

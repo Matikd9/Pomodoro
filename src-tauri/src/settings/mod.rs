@@ -59,6 +59,8 @@ pub struct Settings {
     pub local_shortcut_volume_up: String,
     pub local_shortcut_mute: String,
     pub local_shortcut_fullscreen: String,
+    /// Currently active preset name.
+    pub active_preset: String,
     /// Last known window X coordinate (physical pixels). `None` = use OS default.
     pub window_x: Option<i32>,
     /// Last known window Y coordinate (physical pixels). `None` = use OS default.
@@ -123,6 +125,7 @@ impl Default for Settings {
             local_shortcut_volume_up: "ArrowUp".to_string(),
             local_shortcut_mute: "m".to_string(),
             local_shortcut_fullscreen: "F11".to_string(),
+            active_preset: "Default".to_string(),
             window_x: None,
             window_y: None,
             window_width: None,
@@ -249,6 +252,7 @@ pub fn load(conn: &Connection) -> Result<Settings> {
         local_shortcut_volume_up: map.get("local_shortcut_volume_up").cloned().unwrap_or(d.local_shortcut_volume_up),
         local_shortcut_mute: map.get("local_shortcut_mute").cloned().unwrap_or(d.local_shortcut_mute),
         local_shortcut_fullscreen: map.get("local_shortcut_fullscreen").cloned().unwrap_or(d.local_shortcut_fullscreen),
+        active_preset: map.get("active_preset").cloned().unwrap_or(d.active_preset),
         window_x: parse_opt_i32(&map, "window_x"),
         window_y: parse_opt_i32(&map, "window_y"),
         window_width: parse_opt_u32(&map, "window_width"),

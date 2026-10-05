@@ -3,8 +3,9 @@
   import { onMount } from 'svelte';
   import Titlebar from '$lib/components/Titlebar.svelte';
   import Timer from '$lib/components/Timer.svelte';
-  import { getSettings, getThemes, onSettingsChanged, onThemesChanged, obsidianExportWeekly } from '$lib/ipc';
+  import { getSettings, getThemes, onSettingsChanged, onThemesChanged, onPresetsChanged, obsidianExportWeekly } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
+  import { loadPresets, presets } from '$lib/stores/presets';
   import { applyTheme } from '$lib/stores/theme';
   import { resolveThemeName } from '$lib/utils/theme';
   import { isMac, isTauri } from '$lib/utils/platform';
@@ -98,6 +99,7 @@
         const s = await getSettings();
         settings.set(s);
         localVolume = s.volume;
+        loadPresets().catch(() => {});
 
         // Apply the stored locale on mount.
         setLocale(s.language);
@@ -162,6 +164,9 @@
           const current =
             updated.find((t) => t.name === resolveThemeName($settings, dark)) ?? updated[0];
           if (current) applyTheme(current);
+        }),
+        await onPresetsChanged((updated) => {
+          presets.set(updated);
         })
       );
     })();
