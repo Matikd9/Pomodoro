@@ -440,6 +440,9 @@ async fn main() {
         .route("/api/tasks/restore", post(api_tasks_restore))
         .route("/api/tasks/complete", post(api_tasks_complete))
         .route("/api/tasks/delete", post(api_tasks_delete))
+        .route("/api/presets", get(api_presets_list).post(api_presets_create))
+        .route("/api/presets/update", post(api_presets_update))
+        .route("/api/presets/delete", post(api_presets_delete))
         .route("/api/export/obsidian", post(api_export_obsidian))
         .route("/api/stats/detailed", get(api_stats_detailed))
         .route("/api/stats/daily", get(api_stats_daily))
@@ -649,6 +652,83 @@ async fn api_tasks_delete(
     let tasks = queries::delete_task(&conn, &req.name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(tasks))
+}
+
+async fn api_presets_list(
+    State(ctl): State<Arc<ServerController>>,
+) -> Result<Json<Vec<queries::PresetItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let presets = queries::get_presets(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(presets))
+}
+
+#[derive(Deserialize)]
+struct CreatePresetReq {
+    name: String,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+}
+
+async fn api_presets_create(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<CreatePresetReq>,
+) -> Result<Json<Vec<queries::PresetItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let presets = queries::create_preset(
+        &conn,
+        &req.name,
+        req.work_secs,
+        req.short_break_secs,
+        req.long_break_secs,
+        req.rounds,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(presets))
+}
+
+#[derive(Deserialize)]
+struct UpdatePresetReq {
+    id: i64,
+    name: String,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+}
+
+async fn api_presets_update(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<UpdatePresetReq>,
+) -> Result<Json<Vec<queries::PresetItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let presets = queries::update_preset(
+        &conn,
+        req.id,
+        &req.name,
+        req.work_secs,
+        req.short_break_secs,
+        req.long_break_secs,
+        req.rounds,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(presets))
+}
+
+#[derive(Deserialize)]
+struct DeletePresetReq {
+    id: i64,
+}
+
+async fn api_presets_delete(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<DeletePresetReq>,
+) -> Result<Json<Vec<queries::PresetItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let presets = queries::delete_preset(&conn, req.id)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(presets))
 }
 
 #[derive(Deserialize)]

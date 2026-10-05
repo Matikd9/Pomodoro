@@ -23,6 +23,7 @@
   import MiniControls from './MiniControls.svelte';
   import Tooltip from './Tooltip.svelte';
   import TaskSelector from './TaskSelector.svelte';
+  import PresetSelector from './PresetSelector.svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import type { TimerMode } from '$lib/types';
   import * as m from '$paraglide/messages.js';
@@ -177,6 +178,11 @@
               if (typeof window !== 'undefined') {
                 localStorage.setItem('pomotroid_continuous_base', String(continuousBaseSecs));
               }
+              if ($settings.notifications_enabled) {
+                const title = m.notification_continuous_title();
+                const body = m.notification_continuous_body();
+                notificationShow(title, body).catch(() => {});
+              }
               try {
                 await timerSkip();
                 const latest = await getTimerState();
@@ -257,7 +263,10 @@
           </Tooltip>
         </div>
       </div>
-      <TaskSelector />
+      <div class="selectors-row">
+        <PresetSelector />
+        <TaskSelector />
+      </div>
     {/if}
 
     <!-- Dial + display stacked (display centered over dial) -->
@@ -458,6 +467,15 @@
     text-transform: uppercase;
     /* Collapse the gap above: the flex gap already provides spacing from the dial. */
     margin-top: -4px;
+  }
+
+  .selectors-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 2px;
+    z-index: 35;
   }
 
   .mode-selector-wrapper {

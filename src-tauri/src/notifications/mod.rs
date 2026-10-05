@@ -38,8 +38,34 @@ pub fn dispatch(_app: &AppHandle, title: &str, body: &str) {
 pub fn dispatch(app: &AppHandle, title: &str, body: &str) {
     use tauri_plugin_notification::NotificationExt;
     if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        log::warn!("[notifications] failed to send notification: {e}");
+        log::warn!("[notifications] failed to send notification via plugin: {e}");
+        #[cfg(target_os = "windows")]
+        {
+            log::info!("[notifications] attempting Windows PowerShell toast fallback");
+            spawn_windows_fallback(title, body);
+        }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_windows_fallback(title: &str, body: &str) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let safe_title = title.replace('\'', "''");
+    let safe_body = body.replace('\'', "''");
+    let script = format!(
+        r#"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);
+$nodes = $template.GetElementsByTagName("text");
+$nodes.Item(0).AppendChild($template.CreateTextNode('{safe_title}')) > $null;
+$nodes.Item(1).AppendChild($template.CreateTextNode('{safe_body}')) > $null;
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template);
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Pomotroid').Show($toast);"#
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
 }
 
 // ---------------------------------------------------------------------------

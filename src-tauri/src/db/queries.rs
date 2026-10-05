@@ -694,6 +694,129 @@ pub fn restore_task(conn: &Connection, name: &str) -> Result<Vec<TaskItem>> {
 }
 
 // ---------------------------------------------------------------------------
+// Preset CRUD
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PresetItem {
+    pub id: i64,
+    pub name: String,
+    pub work_secs: u32,
+    pub short_break_secs: u32,
+    pub long_break_secs: u32,
+    pub rounds: u32,
+}
+
+pub fn get_presets(conn: &Connection) -> Result<Vec<PresetItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, work_secs, short_break_secs, long_break_secs, rounds
+         FROM presets
+         ORDER BY CASE WHEN name = 'Default' THEN 0 ELSE 1 END, id ASC"
+    )?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok(PresetItem {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            work_secs: row.get(2)?,
+            short_break_secs: row.get(3)?,
+            long_break_secs: row.get(4)?,
+            rounds: row.get(5)?,
+        })
+    })?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r?);
+    }
+
+    if list.is_empty() {
+        conn.execute(
+            "INSERT OR IGNORE INTO presets (name, work_secs, short_break_secs, long_break_secs, rounds)
+             VALUES ('Default', 1500, 300, 900, 4)",
+            [],
+        )?;
+        return get_presets(conn);
+    }
+
+    Ok(list)
+}
+
+pub fn create_preset(
+    conn: &Connection,
+    name: &str,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+) -> Result<Vec<PresetItem>> {
+    let clean = name.trim();
+    if clean.is_empty() {
+        return get_presets(conn);
+    }
+
+    conn.execute(
+        "INSERT INTO presets (name, work_secs, short_break_secs, long_break_secs, rounds)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(name) DO UPDATE SET
+            work_secs = excluded.work_secs,
+            short_break_secs = excluded.short_break_secs,
+            long_break_secs = excluded.long_break_secs,
+            rounds = excluded.rounds",
+        params![clean, work_secs, short_break_secs, long_break_secs, rounds],
+    )?;
+
+    get_presets(conn)
+}
+
+pub fn update_preset(
+    conn: &Connection,
+    id: i64,
+    name: &str,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+) -> Result<Vec<PresetItem>> {
+    let clean = name.trim();
+    if clean.is_empty() {
+        return get_presets(conn);
+    }
+
+    let current_name: Option<String> = conn
+        .query_row("SELECT name FROM presets WHERE id = ?1", params![id], |r| r.get(0))
+        .ok();
+
+    let target_name = if let Some(ref curr) = current_name {
+        if curr == "Default" {
+            "Default"
+        } else {
+            clean
+        }
+    } else {
+        clean
+    };
+
+    conn.execute(
+        "UPDATE presets
+         SET name = ?1, work_secs = ?2, short_break_secs = ?3, long_break_secs = ?4, rounds = ?5
+         WHERE id = ?6",
+        params![target_name, work_secs, short_break_secs, long_break_secs, rounds, id],
+    )?;
+
+    get_presets(conn)
+}
+
+pub fn delete_preset(conn: &Connection, id: i64) -> Result<Vec<PresetItem>> {
+    // Protect 'Default' preset from deletion
+    conn.execute(
+        "DELETE FROM presets WHERE id = ?1 AND name != 'Default'",
+        params![id],
+    )?;
+    get_presets(conn)
+}
+
+// ---------------------------------------------------------------------------
 // Streak helpers
 // ---------------------------------------------------------------------------
 
@@ -999,5 +1122,42 @@ mod tests {
         assert_eq!(week.days.len(), 7);
         assert!(!week.start_date.is_empty());
         assert!(!week.end_date.is_empty());
+    }
+
+    #[test]
+    fn presets_management_and_defaults() {
+        let conn = setup();
+        let presets = get_presets(&conn).unwrap();
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].name, "Default");
+        assert_eq!(presets[0].work_secs, 1500);
+        assert_eq!(presets[0].short_break_secs, 300);
+        assert_eq!(presets[0].long_break_secs, 900);
+        assert_eq!(presets[0].rounds, 4);
+
+        // Create new preset
+        create_preset(&conn, "Study Theory", 2700, 600, 1200, 3).unwrap();
+        let updated = get_presets(&conn).unwrap();
+        assert_eq!(updated.len(), 2);
+        let theory = updated.iter().find(|p| p.name == "Study Theory").unwrap();
+        assert_eq!(theory.work_secs, 2700);
+        assert_eq!(theory.rounds, 3);
+
+        // Update preset
+        update_preset(&conn, theory.id, "Study Theory Advanced", 3000, 600, 1200, 4).unwrap();
+        let after_update = get_presets(&conn).unwrap();
+        assert!(after_update.iter().any(|p| p.name == "Study Theory Advanced"));
+
+        // Delete custom preset
+        delete_preset(&conn, theory.id).unwrap();
+        let after_delete = get_presets(&conn).unwrap();
+        assert_eq!(after_delete.len(), 1);
+        assert_eq!(after_delete[0].name, "Default");
+
+        // Attempt to delete 'Default' must be ignored
+        delete_preset(&conn, after_delete[0].id).unwrap();
+        let still_default = get_presets(&conn).unwrap();
+        assert_eq!(still_default.len(), 1);
+        assert_eq!(still_default[0].name, "Default");
     }
 }

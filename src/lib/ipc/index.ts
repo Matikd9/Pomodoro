@@ -18,6 +18,7 @@ import type {
   TaskItem,
   TaskStatsSummary,
   ObsidianExportResult,
+  PresetItem,
 } from '$lib/types';
 
 // --- Remote Server Configuration ---
@@ -587,6 +588,155 @@ export const tasksDelete = async (name: string): Promise<TaskItem[]> => {
   return (Array.isArray(raw) ? raw : []).map(normalizeTask);
 };
 
+// --- Preset commands ---
+
+export function normalizePreset(item: unknown): PresetItem {
+  if (!item || typeof item !== 'object') {
+    return {
+      id: 1,
+      name: 'Default',
+      work_secs: 1500,
+      short_break_secs: 300,
+      long_break_secs: 900,
+      rounds: 4,
+    };
+  }
+  const obj = item as Record<string, unknown>;
+  return {
+    id: Number(obj.id ?? 1),
+    name: String(obj.name ?? 'Default'),
+    work_secs: Number(obj.work_secs ?? obj.workSecs ?? 1500),
+    short_break_secs: Number(obj.short_break_secs ?? obj.shortBreakSecs ?? 300),
+    long_break_secs: Number(obj.long_break_secs ?? obj.longBreakSecs ?? 900),
+    rounds: Number(obj.rounds ?? 4),
+  };
+}
+
+export const presetsList = async (): Promise<PresetItem[]> => {
+  let raw: unknown[];
+  if (isRemoteMode()) {
+    try {
+      raw = await remoteFetch<unknown[]>('/api/presets');
+    } catch (e) {
+      console.warn('Failed to fetch presets from remote:', e);
+      if (isTauri) {
+        raw = await invoke<unknown[]>('presets_list');
+      } else {
+        throw e;
+      }
+    }
+  } else {
+    raw = await invoke<unknown[]>('presets_list');
+  }
+  const list = (Array.isArray(raw) ? raw : []).map(normalizePreset);
+  if (list.length === 0) {
+    return [{ id: 1, name: 'Default', work_secs: 1500, short_break_secs: 300, long_break_secs: 900, rounds: 4 }];
+  }
+  return list;
+};
+
+export const presetsCreate = async (
+  name: string,
+  work_secs: number,
+  short_break_secs: number,
+  long_break_secs: number,
+  rounds: number
+): Promise<PresetItem[]> => {
+  if (isRemoteMode()) {
+    try {
+      const raw = await remoteFetch<unknown[]>('/api/presets', {
+        method: 'POST',
+        body: JSON.stringify({ name, work_secs, short_break_secs, long_break_secs, rounds }),
+      });
+      return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+    } catch (e) {
+      console.warn('Remote server may not support /api/presets create yet:', e);
+      if (isTauri) {
+        const raw = await invoke<unknown[]>('presets_create', {
+          name,
+          workSecs: work_secs,
+          shortBreakSecs: short_break_secs,
+          longBreakSecs: long_break_secs,
+          rounds,
+        });
+        return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+      }
+      return presetsList();
+    }
+  }
+  const raw = await invoke<unknown[]>('presets_create', {
+    name,
+    workSecs: work_secs,
+    shortBreakSecs: short_break_secs,
+    longBreakSecs: long_break_secs,
+    rounds,
+  });
+  return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+};
+
+export const presetsUpdate = async (
+  id: number,
+  name: string,
+  work_secs: number,
+  short_break_secs: number,
+  long_break_secs: number,
+  rounds: number
+): Promise<PresetItem[]> => {
+  if (isRemoteMode()) {
+    try {
+      const raw = await remoteFetch<unknown[]>('/api/presets/update', {
+        method: 'POST',
+        body: JSON.stringify({ id, name, work_secs, short_break_secs, long_break_secs, rounds }),
+      });
+      return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+    } catch (e) {
+      console.warn('Remote server may not support /api/presets/update yet:', e);
+      if (isTauri) {
+        const raw = await invoke<unknown[]>('presets_update', {
+          id,
+          name,
+          workSecs: work_secs,
+          shortBreakSecs: short_break_secs,
+          longBreakSecs: long_break_secs,
+          rounds,
+        });
+        return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+      }
+      return presetsList();
+    }
+  }
+  const raw = await invoke<unknown[]>('presets_update', {
+    id,
+    name,
+    workSecs: work_secs,
+    shortBreakSecs: short_break_secs,
+    longBreakSecs: long_break_secs,
+    rounds,
+  });
+  return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+};
+
+export const presetsDelete = async (id: number): Promise<PresetItem[]> => {
+  if (isRemoteMode()) {
+    try {
+      const raw = await remoteFetch<unknown[]>('/api/presets/delete', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      });
+      return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+    } catch (e) {
+      console.warn('Remote server may not support /api/presets/delete yet:', e);
+      if (isTauri) {
+        const raw = await invoke<unknown[]>('presets_delete', { id });
+        return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+      }
+      return presetsList();
+    }
+  }
+  const raw = await invoke<unknown[]>('presets_delete', { id });
+  return (Array.isArray(raw) ? raw : []).map(normalizePreset);
+};
+
 // --- Obsidian commands ---
 
 export const obsidianExportWeekly = async (weekOffset = 0): Promise<ObsidianExportResult> => {
@@ -678,8 +828,12 @@ export const getThemes = async () => {
 // --- Notification commands ---
 
 export const notificationShow = async (title: string, body: string) => {
-  if (isTauri && !isRemoteMode()) {
-    return invoke<void>('notification_show', { title, body });
+  if (isTauri) {
+    try {
+      return await invoke<void>('notification_show', { title, body });
+    } catch (err) {
+      console.warn('Tauri notification_show failed, attempting browser fallback:', err);
+    }
   }
   if (typeof window !== 'undefined' && 'Notification' in window) {
     if (Notification.permission === 'granted') {

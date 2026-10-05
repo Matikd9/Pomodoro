@@ -8,7 +8,9 @@
     clearCustomAudio,
     openAudioFilePicker,
     onSettingsChanged,
+    notificationShow,
   } from '$lib/ipc';
+  import { isTauri } from '$lib/utils/platform';
   import SettingsToggle from '$lib/components/settings/SettingsToggle.svelte';
   import type { CustomAudioInfo } from '$lib/types';
   import * as m from '$paraglide/messages.js';
@@ -84,6 +86,38 @@
     settings.set(updated);
   }
 
+  let testFeedback = $state<string | null>(null);
+
+  async function toggleNotifications() {
+    const nextVal = !$settings.notifications_enabled;
+    const updated = await setSetting('notifications', nextVal ? 'true' : 'false');
+    settings.set(updated);
+
+    if (nextVal) {
+      if (typeof window !== 'undefined' && !isTauri && 'Notification' in window) {
+        if (Notification.permission !== 'granted') {
+          Notification.requestPermission().catch(() => {});
+        }
+      }
+    }
+  }
+
+  async function sendTestNotification() {
+    testFeedback = m.notif_test_sent();
+    try {
+      await notificationShow(
+        m.notif_test_title(),
+        m.notif_test_body()
+      );
+    } catch (e) {
+      console.error('Failed to send test notification:', e);
+      testFeedback = 'Failed';
+    }
+    setTimeout(() => {
+      testFeedback = null;
+    }, 2500);
+  }
+
   async function handleVolumeInput(e: Event) {
     const val = (e.target as HTMLInputElement).valueAsNumber;
     localVolume = val;
@@ -153,8 +187,20 @@
     label={m.notif_toggle_desktop()}
     description={m.notif_toggle_desktop_desc()}
     checked={$settings.notifications_enabled}
-    onclick={() => toggle('notifications', $settings.notifications_enabled)}
+    onclick={toggleNotifications}
   />
+
+  {#if $settings.notifications_enabled}
+    <div class="test-notif-row">
+      <button type="button" class="btn-test-notif" onclick={sendTestNotification}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+        <span>{testFeedback || m.notif_btn_test()}</span>
+      </button>
+    </div>
+  {/if}
 
   <div class="group-heading">{m.notif_group_tick()}</div>
 
@@ -354,5 +400,34 @@
     font-size: 0.72rem;
     color: var(--color-danger, #e05252);
     font-family: monospace;
+  }
+
+  .test-notif-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+    margin-bottom: 8px;
+    padding: 0 16px;
+  }
+
+  .btn-test-notif {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--color-foreground) 8%, transparent);
+    border: 1px solid color-mix(in oklch, var(--color-foreground) 15%, transparent);
+    color: var(--color-foreground);
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-snappy);
+  }
+
+  .btn-test-notif:hover {
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
+    border-color: var(--color-focus-round);
+    color: var(--color-focus-round);
   }
 </style>

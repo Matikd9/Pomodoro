@@ -463,6 +463,54 @@ pub fn tasks_restore(
     queries::get_tasks_summary(&conn).map_err(|e| e.to_string())
 }
 
+/// Returns the list of all duration presets.
+#[tauri::command]
+pub fn presets_list(db: State<'_, DbState>) -> Result<Vec<queries::PresetItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::get_presets(&conn).map_err(|e| e.to_string())
+}
+
+/// Creates or updates a preset by name and returns the updated presets list.
+#[tauri::command]
+pub fn presets_create(
+    name: String,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::PresetItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::create_preset(&conn, &name, work_secs, short_break_secs, long_break_secs, rounds)
+        .map_err(|e| e.to_string())
+}
+
+/// Updates an existing preset by ID and returns the updated presets list.
+#[tauri::command]
+pub fn presets_update(
+    id: i64,
+    name: String,
+    work_secs: u32,
+    short_break_secs: u32,
+    long_break_secs: u32,
+    rounds: u32,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::PresetItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::update_preset(&conn, id, &name, work_secs, short_break_secs, long_break_secs, rounds)
+        .map_err(|e| e.to_string())
+}
+
+/// Deletes a preset by ID (protecting Default) and returns the updated presets list.
+#[tauri::command]
+pub fn presets_delete(
+    id: i64,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::PresetItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::delete_preset(&conn, id).map_err(|e| e.to_string())
+}
+
 /// Exports the weekly Pomodoro report to Obsidian Markdown.
 #[tauri::command]
 pub fn obsidian_export_weekly(

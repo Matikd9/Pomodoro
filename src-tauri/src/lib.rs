@@ -396,6 +396,11 @@ pub fn run() {
             tasks_toggle_complete,
             tasks_delete,
             tasks_restore,
+            // Presets
+            presets_list,
+            presets_create,
+            presets_update,
+            presets_delete,
             // Obsidian
             obsidian_export_weekly,
             obsidian_save_file,

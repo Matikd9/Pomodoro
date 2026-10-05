@@ -172,3 +172,12 @@ export interface ObsidianExportResult {
   content?: string | null;
 }
 
+export interface PresetItem {
+  id: number;
+  name: string;
+  work_secs: number;
+  short_break_secs: number;
+  long_break_secs: number;
+  rounds: number;
+}
+

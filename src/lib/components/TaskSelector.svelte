@@ -353,7 +353,7 @@
     justify-content: center;
     align-items: center;
     z-index: 30;
-    margin-bottom: 2px;
+    margin-bottom: 0;
   }
 
   .badge-wrapper {

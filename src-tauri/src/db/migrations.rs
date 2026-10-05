@@ -145,6 +145,23 @@ const MIGRATION_11: &str = "
     INSERT INTO schema_version VALUES (11);
 ";
 
+/// Creates the presets table for timer duration presets and seeds the "Default" preset.
+const MIGRATION_12: &str = "
+    CREATE TABLE IF NOT EXISTS presets (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT NOT NULL UNIQUE,
+        work_secs        INTEGER NOT NULL,
+        short_break_secs INTEGER NOT NULL,
+        long_break_secs  INTEGER NOT NULL,
+        rounds           INTEGER NOT NULL
+    );
+
+    INSERT OR IGNORE INTO presets (name, work_secs, short_break_secs, long_break_secs, rounds)
+    VALUES ('Default', 1500, 300, 900, 4);
+
+    INSERT INTO schema_version VALUES (12);
+";
+
 /// Apply any pending migrations. Each migration is wrapped in a transaction
 /// so a partial failure leaves the database unchanged.
 pub fn run(conn: &Connection) -> Result<()> {
@@ -216,6 +233,12 @@ pub fn run(conn: &Connection) -> Result<()> {
         log::info!("[db/migrations] MIGRATION_11 complete");
     }
 
+    if version < 12 {
+        log::info!("[db/migrations] applying MIGRATION_12: create presets table and seed Default preset");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_12} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_12 complete");
+    }
+
     Ok(())
 }
 
@@ -251,14 +274,14 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 11);
+        assert_eq!(v, 12);
     }
 
     #[test]
     fn all_tables_created() {
         let conn = Connection::open_in_memory().unwrap();
         run(&conn).unwrap();
-        for table in &["settings", "sessions", "custom_themes", "schema_version", "tasks"] {
+        for table in &["settings", "sessions", "custom_themes", "schema_version", "tasks", "presets"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",

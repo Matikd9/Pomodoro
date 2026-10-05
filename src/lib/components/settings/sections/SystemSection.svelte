@@ -66,12 +66,6 @@
     { value: 'auto', label: 'Auto' },
     { value: 'en', label: 'English' },
     { value: 'es', label: 'Español' },
-    { value: 'fr', label: 'Français' },
-    { value: 'de', label: 'Deutsch' },
-    { value: 'ja', label: '日本語' },
-    { value: 'zh', label: '中文' },
-    { value: 'pt', label: 'Português' },
-    { value: 'tr', label: 'Türkçe' },
   ];
 
   // On Linux, probe for libayatana-appindicator3 at runtime.  The tray section
