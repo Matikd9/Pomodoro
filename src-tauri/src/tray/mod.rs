@@ -327,7 +327,7 @@ pub fn create_tray(app: &AppHandle, state: &Arc<TrayState>) {
                 }
                 "exit" => {
                     log::info!("[tray] exit");
-                    app.exit(0);
+                    std::process::exit(0);
                 }
                 _ => {}
             }

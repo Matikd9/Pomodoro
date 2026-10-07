@@ -344,7 +344,6 @@ pub fn run() {
             // when the main window is truly closed (not hidden to tray).
             let db_for_close = db.clone();
             let win_for_close = main_window.clone();
-            let app_for_close = app.handle().clone();
             let db_for_pos = db.clone();
             let win_for_pos = main_window.clone();
             main_window.on_window_event(move |event| {
@@ -366,8 +365,9 @@ pub fn run() {
                             api.prevent_close();
                             let _ = win_for_close.hide();
                         } else {
-                            // Main window is closing — exit app cleanly so no zombie process locks WebView2
-                            app_for_close.exit(0);
+                            // Main window is closing — terminate process and all threads immediately
+                            // so no zombie process holds WebView2 locks.
+                            std::process::exit(0);
                         }
                     }
                     tauri::WindowEvent::Moved(pos) => {
@@ -455,6 +455,11 @@ pub fn run() {
             check_update,
             install_update,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                std::process::exit(0);
+            }
+        });
 }
