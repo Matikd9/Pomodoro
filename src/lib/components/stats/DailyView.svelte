@@ -207,7 +207,7 @@
             style="--bar-scale: {barH / CHART_H}; --bar-delay: {h * 18}ms"
           >
             {#if count > 0}
-              <title>{h}:00 – {fmtRounds(count)} {m.stats_rounds().toLowerCase()}</title>
+              <title>{h}:00 – {fmtTime(Math.round(count))}</title>
             {/if}
           </rect>
 

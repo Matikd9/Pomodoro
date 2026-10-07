@@ -17,18 +17,20 @@
   import TimerSection from '$lib/components/settings/sections/TimerSection.svelte';
   import AppearanceSection from '$lib/components/settings/sections/AppearanceSection.svelte';
   import NotificationsSection from '$lib/components/settings/sections/NotificationsSection.svelte';
+  import TelegramSection from '$lib/components/settings/sections/TelegramSection.svelte';
   import ShortcutsSection from '$lib/components/settings/sections/ShortcutsSection.svelte';
   import SystemSection from '$lib/components/settings/sections/SystemSection.svelte';
   import AboutSection from '$lib/components/settings/sections/AboutSection.svelte';
 
   import * as m from '$paraglide/messages.js';
 
-  type Section = 'timer' | 'appearance' | 'notifications' | 'shortcuts' | 'system' | 'about';
+  type Section = 'timer' | 'appearance' | 'notifications' | 'telegram' | 'shortcuts' | 'system' | 'about';
 
   const SECTIONS: { id: Section; label: () => string }[] = [
     { id: 'timer', label: m.nav_timer },
     { id: 'appearance', label: m.nav_appearance },
     { id: 'notifications', label: m.nav_notifications },
+    { id: 'telegram', label: m.nav_telegram },
     { id: 'shortcuts', label: m.nav_shortcuts },
     { id: 'system', label: m.nav_system },
     { id: 'about', label: m.nav_about },
@@ -169,6 +171,8 @@
         <AppearanceSection />
       {:else if active === 'notifications'}
         <NotificationsSection />
+      {:else if active === 'telegram'}
+        <TelegramSection />
       {:else if active === 'shortcuts'}
         <ShortcutsSection />
       {:else if active === 'system'}

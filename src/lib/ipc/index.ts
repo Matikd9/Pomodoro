@@ -867,6 +867,25 @@ export const notificationShow = async (title: string, body: string) => {
   }
 };
 
+// --- Telegram commands ---
+
+export const telegramTest = async (botToken: string, chatId: string): Promise<string> => {
+  if (isRemoteMode()) {
+    try {
+      return await remoteFetch<string>('/api/telegram/test', {
+        method: 'POST',
+        body: JSON.stringify({ bot_token: botToken, chat_id: chatId }),
+      });
+    } catch (err) {
+      if (isTauri) {
+        return invoke<string>('telegram_test', { botToken, chatId });
+      }
+      throw err;
+    }
+  }
+  return invoke<string>('telegram_test', { botToken, chatId });
+};
+
 // --- Window commands ---
 
 export const setWindowVisibility = async (visible: boolean) => {

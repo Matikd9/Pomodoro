@@ -13,6 +13,7 @@
     onTimerResumed,
     onRoundChange,
     onTimerReset,
+    setSetting,
   } from '$lib/ipc';
   import { timerState } from '$lib/stores/timer';
   import { settings } from '$lib/stores/settings';
@@ -103,6 +104,12 @@
       localStorage.removeItem('pomotroid_continuous_base');
     }
     timerMode = newMode;
+    try {
+      const updated = await setSetting('timer_mode', newMode);
+      settings.set(updated);
+    } catch (err) {
+      console.warn('Failed to save timer_mode to settings:', err);
+    }
   }
 
   function handleContinuousReset() {

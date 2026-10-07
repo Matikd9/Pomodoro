@@ -131,19 +131,22 @@
   const days = $derived.by(() => {
     const statsDays = calendarStats?.days;
     const dates = statsDays ? statsDays.map((d) => d.date) : getCalendarWeekDates(weekOffset);
-    const roundsByDate = new Map(statsDays ? statsDays.map((d) => [d.date, d.rounds]) : []);
+    const dayStatMap = new Map(statsDays ? statsDays.map((d) => [d.date, d]) : []);
 
     return dates.map((dateStr) => {
       const [y, m, d] = dateStr.split('-').map(Number);
       const dateObj = new Date(y, m - 1, d);
       const isToday = dateStr === todayIso;
       const isFuture = dateStr > todayIso;
-      const rounds = roundsByDate.get(dateStr) ?? 0;
+      const stat = dayStatMap.get(dateStr);
+      const rounds = stat?.rounds ?? 0;
+      const focus_secs = stat?.focus_secs ?? Math.round(rounds * ($settings.time_work_secs || 1500));
       return {
         date: dateStr,
         label: shortFmt.format(dateObj),
         short: narrowFmt.format(dateObj),
         rounds,
+        focus_secs,
         isToday,
         isFuture,
       };
@@ -162,6 +165,16 @@
     return m === 0 ? `${h}h` : `${h}h ${m}m`;
   }
 
+  function fmtBarTime(secs: number): string {
+    const mins = Math.round(secs / 60);
+    if (mins === 0) return '';
+    if (mins < 60) return `${mins}m`;
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+
+  const maxFocusSecs = $derived(Math.max(1, ...days.map((d) => d.focus_secs)));
   const maxRounds = $derived(Math.max(1, ...days.map((d) => d.rounds)));
   const totalWeek = $derived(days.reduce((s, d) => s + d.rounds, 0));
   const hasData = $derived(totalWeek > 0);
@@ -253,7 +266,10 @@
   <div class="summary">
     <div class="summary-item">
       <span class="summary-label">{isCurrentWeek ? m.stats_this_week() : m.stats_rounds()}</span>
-      <span class="summary-value">{fmtRounds(totalWeek)} {m.stats_rounds().toLowerCase()}</span>
+      <span class="summary-value">
+        {fmtTime(Math.round(totalWeekSecs / 60))}
+        <span class="summary-sub">· {fmtRounds(totalWeek)} {m.stats_rounds().toLowerCase()}</span>
+      </span>
     </div>
     {#if isCurrentWeek && streak}
       <div class="summary-item streak">
@@ -337,8 +353,8 @@
         >
           {#each days as day, i}
             {@const barH = Math.max(
-              day.rounds > 0 ? 4 : 0,
-              Math.round((day.rounds / maxRounds) * CHART_H)
+              day.focus_secs > 0 ? 4 : 0,
+              Math.round((day.focus_secs / maxFocusSecs) * CHART_H)
             )}
             {@const x = i * (BAR_W + BAR_GAP)}
             {@const y = CHART_H - barH}
@@ -352,15 +368,15 @@
               rx="3"
               class="bar"
               class:bar-today={day.isToday}
-              class:bar-empty={day.rounds === 0}
+              class:bar-empty={day.focus_secs === 0}
               class:bar-future={day.isFuture}
               style="--bar-delay: {i * 40}ms"
             />
 
-            <!-- Round count label above bar -->
-            {#if day.rounds > 0}
+            <!-- Time label above bar -->
+            {#if day.focus_secs >= 60}
               <text x={x + BAR_W / 2} y={y - 5} text-anchor="middle" class="count-label"
-                >{fmtRounds(day.rounds)}</text
+                >{fmtBarTime(day.focus_secs)}</text
               >
             {/if}
 
@@ -558,6 +574,12 @@
     display: flex;
     align-items: center;
     gap: 5px;
+  }
+
+  .summary-sub {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--color-foreground-darker);
   }
 
   .streak-none {

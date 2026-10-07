@@ -61,6 +61,10 @@ export interface Settings {
   local_shortcut_mute: string;
   local_shortcut_fullscreen: string;
   active_preset: string;
+  telegram_enabled: boolean;
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+  timer_mode: string;
 }
 
 /** Returned by `check_update` — describes an available update. */
@@ -105,6 +109,7 @@ export interface DailyStats {
 export interface DayStat {
   date: string; // "YYYY-MM-DD"
   rounds: number;
+  focus_secs?: number;
 }
 
 export interface HeatmapEntry {

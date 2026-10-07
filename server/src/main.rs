@@ -36,6 +36,9 @@ pub mod defaults;
 #[path = "../../src-tauri/src/settings/mod.rs"]
 pub mod settings;
 
+#[path = "../../src-tauri/src/telegram.rs"]
+pub mod telegram;
+
 #[path = "../../src-tauri/src/timer/engine.rs"]
 pub mod engine;
 
@@ -343,6 +346,28 @@ async fn main() {
                             let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
                             let _ = tx.send(WsEvent::RoundChange { payload: snap });
 
+                            let (telegram_enabled, bot_token, chat_id, timer_mode) = {
+                                let s = settings_thread.lock().unwrap();
+                                (s.telegram_enabled, s.telegram_bot_token.clone(), s.telegram_chat_id.clone(), s.timer_mode.clone())
+                            };
+                            if telegram_enabled && !bot_token.is_empty() && !chat_id.is_empty() && timer_mode == "pomodoro" {
+                                let task_name = task_thread.lock().unwrap().clone();
+                                let msg = match completed_round {
+                                    RoundType::Work => {
+                                        let break_mins = (next_duration + 30) / 60;
+                                        format!("🍅 ¡Tiempo de concentración terminado! Tarea: {task_name}. Toca descansar {break_mins} min.")
+                                    }
+                                    RoundType::ShortBreak | RoundType::LongBreak => {
+                                        format!("☕ ¡Descanso terminado! Hora de volver a concentrarse en {task_name}.")
+                                    }
+                                };
+                                tokio::spawn(async move {
+                                    if let Err(e) = telegram::send_telegram_message(&bot_token, &chat_id, &msg).await {
+                                        log::warn!("[server] Error enviando notificación Telegram: {e}");
+                                    }
+                                });
+                            }
+
                             let should_auto = match next_round {
                                 RoundType::Work => auto_start_work,
                                 _ => auto_start_break,
@@ -454,6 +479,7 @@ async fn main() {
         .route("/api/settings/reset", post(api_settings_reset))
         .route("/api/sessions/clear", post(api_sessions_clear))
         .route("/api/themes", get(api_themes_list))
+        .route("/api/telegram/test", post(api_telegram_test))
         // WebSocket
         .route("/ws", get(ws_handler))
         .with_state(controller)
@@ -952,6 +978,21 @@ async fn api_settings_reset(
         let _ = ctl.broadcast_tx.send(WsEvent::Reset { payload: snap });
     }
     Ok(Json(updated))
+}
+
+#[derive(Deserialize)]
+struct TelegramTestReq {
+    bot_token: String,
+    chat_id: String,
+}
+
+async fn api_telegram_test(
+    Json(req): Json<TelegramTestReq>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    match telegram::test_telegram_connection(&req.bot_token, &req.chat_id).await {
+        Ok(msg) => Ok(Json(msg)),
+        Err(err) => Err((StatusCode::BAD_REQUEST, err)),
+    }
 }
 
 async fn api_sessions_clear(

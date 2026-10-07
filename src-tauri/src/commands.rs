@@ -1019,6 +1019,12 @@ pub struct HeatmapStats {
     pub longest_streak: u32,
 }
 
+/// Sends a test notification to Telegram to verify credentials.
+#[tauri::command]
+pub async fn telegram_test(bot_token: String, chat_id: String) -> Result<String, String> {
+    crate::telegram::test_telegram_connection(&bot_token, &chat_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;

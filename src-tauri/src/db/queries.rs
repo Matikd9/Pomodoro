@@ -142,6 +142,8 @@ pub struct DayStat {
     /// Local calendar date in "YYYY-MM-DD" format.
     pub date: String,
     pub rounds: f32,
+    #[serde(default)]
+    pub focus_secs: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -207,17 +209,17 @@ pub fn get_daily_stats_by_date(conn: &Connection, target_date: &str) -> Result<D
     let mut by_hour = vec![0.0f32; 24];
     let mut stmt = conn.prepare(
         "SELECT CAST(strftime('%H', datetime(started_at, 'unixepoch', 'localtime')) AS INTEGER) as h,
-                SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)) as cnt
+                COALESCE(SUM(duration_secs), 0) as secs
          FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') = ?1
          GROUP BY h",
     )?;
-    let rows = stmt.query_map([target_date], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?)))?;
+    let rows = stmt.query_map([target_date], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?;
     for row in rows.flatten() {
-        let (h, cnt) = row;
+        let (h, secs) = row;
         if (0..24).contains(&h) {
-            by_hour[h as usize] = cnt as f32;
+            by_hour[h as usize] = (secs as f32) / 60.0;
         }
     }
 
@@ -246,15 +248,22 @@ pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
 pub fn get_weekly_stats(conn: &Connection) -> Result<Vec<DayStat>> {
     let mut stmt = conn.prepare(
         "SELECT date(started_at, 'unixepoch', 'localtime') as day,
-                COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0) as rounds
+                COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0) as rounds,
+                COALESCE(SUM(duration_secs), 0) as focus_secs
          FROM sessions
          WHERE round_type = 'work' AND duration_secs >= 120
          AND date(started_at, 'unixepoch', 'localtime') >= date('now', 'localtime', '-6 days')
          GROUP BY day
          ORDER BY day",
     )?;
-    let rows = stmt.query_map([], |r| Ok(DayStat { date: r.get(0)?, rounds: r.get::<_, f64>(1)? as f32 }))?
-        .collect();
+    let rows = stmt.query_map([], |r| {
+        Ok(DayStat {
+            date: r.get(0)?,
+            rounds: r.get::<_, f64>(1)? as f32,
+            focus_secs: r.get::<_, i64>(2)? as u32,
+        })
+    })?
+    .collect();
     rows
 }
 
@@ -411,19 +420,21 @@ pub fn get_calendar_week_stats(conn: &Connection, week_offset: i32) -> Result<Ca
             [&start_date, &format!("+{i} days")],
             |r| r.get(0),
         )?;
-        let rounds: f64 = conn
+        let (rounds, focus_secs): (f64, i64) = conn
             .query_row(
-                "SELECT COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0)
+                "SELECT COALESCE(SUM(CAST(duration_secs AS REAL) / CAST(CASE WHEN target_secs > 0 THEN target_secs ELSE 1500 END AS REAL)), 0.0),
+                        COALESCE(SUM(duration_secs), 0)
                  FROM sessions
                  WHERE round_type = 'work' AND duration_secs >= 120
                    AND date(started_at, 'unixepoch', 'localtime') = ?1",
                 [&day_date],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .unwrap_or(0.0);
+            .unwrap_or((0.0, 0));
         days.push(DayStat {
             date: day_date,
             rounds: rounds as f32,
+            focus_secs: focus_secs as u32,
         });
     }
 

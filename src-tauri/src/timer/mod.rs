@@ -404,9 +404,28 @@ fn listen_events(
                 let snapshot = build_snapshot(&sequence, &settings, &shared, &db, &current_task);
                 let _ = app.emit("timer:round-change", &snapshot);
 
-                // Desktop notifications are dispatched by the frontend via the
-                // notification_show command after receiving the timer:round-change
-                // event, so translated strings can be used.
+                // Dispatch Telegram notification if enabled and in pomodoro mode.
+                let (telegram_enabled, bot_token, chat_id, timer_mode) = {
+                    let s = settings.lock().unwrap();
+                    (s.telegram_enabled, s.telegram_bot_token.clone(), s.telegram_chat_id.clone(), s.timer_mode.clone())
+                };
+                if telegram_enabled && !bot_token.is_empty() && !chat_id.is_empty() && timer_mode == "pomodoro" {
+                    let task_name = current_task.lock().unwrap().clone();
+                    let msg = match completed_round {
+                        RoundType::Work => {
+                            let break_mins = (next_duration + 30) / 60;
+                            format!("🍅 ¡Tiempo de concentración terminado! Tarea: {task_name}. Toca descansar {break_mins} min.")
+                        }
+                        RoundType::ShortBreak | RoundType::LongBreak => {
+                            format!("☕ ¡Descanso terminado! Hora de volver a concentrarse en {task_name}.")
+                        }
+                    };
+                    tokio::spawn(async move {
+                        if let Err(e) = crate::telegram::send_telegram_message(&bot_token, &chat_id, &msg).await {
+                            log::warn!("[telegram] Error enviando notificación: {e}");
+                        }
+                    });
+                }
 
                 // Audio alert for the new round.
                 if let Some(audio) = app.try_state::<Arc<AudioManager>>() {

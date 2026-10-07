@@ -45,6 +45,10 @@ const defaults: Settings = {
   local_shortcut_mute: 'm',
   local_shortcut_fullscreen: 'F11',
   active_preset: 'Default',
+  telegram_enabled: false,
+  telegram_bot_token: '',
+  telegram_chat_id: '',
+  timer_mode: 'pomodoro',
 };
 
 export const settings = writable<Settings>(defaults);

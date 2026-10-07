@@ -3,6 +3,7 @@
   "nav_timer": "Timer",
   "nav_appearance": "Appearance",
   "nav_notifications": "Notifications",
+  "nav_telegram": "Telegram",
   "nav_shortcuts": "Shortcuts",
   "nav_system": "System",
   "nav_about": "About",
@@ -230,5 +231,19 @@
   "notif_test_title": "Pomotroid",
   "notif_test_body": "Desktop notifications are working!",
   "notification_continuous_title": "Focus cycle complete!",
-  "notification_continuous_body": "Great job! Continuing focus session without interruption."
+  "notification_continuous_body": "Great job! Continuing focus session without interruption.",
+  "telegram_group_title": "Telegram Bot",
+  "telegram_toggle": "Enable Telegram alerts",
+  "telegram_toggle_desc": "Receive a notification on your mobile Telegram chat whenever a focus or break round ends.",
+  "telegram_token_label": "Bot Token",
+  "telegram_token_placeholder": "123456789:ABCdefGHIjklMNOpqrsTUVwxyz...",
+  "telegram_chat_id_label": "Chat ID",
+  "telegram_chat_id_placeholder": "e.g. 987654321",
+  "telegram_test_btn": "Test connection",
+  "telegram_test_testing": "Sending test message…",
+  "telegram_test_success": "Connection successful! Check your Telegram.",
+  "telegram_help_title": "How to get your Bot Token and Chat ID?",
+  "telegram_help_step1": "1. In Telegram, search for @BotFather and send /newbot to create your bot. Copy the generated API token.",
+  "telegram_help_step2": "2. Open a chat with your newly created bot and click Start.",
+  "telegram_help_step3": "3. To find your personal Chat ID, message @userinfobot in Telegram and click Start; it will reply with your numeric Id."
 }
