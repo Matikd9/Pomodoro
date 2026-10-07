@@ -14,6 +14,8 @@
     onRoundChange,
     onTimerReset,
     setSetting,
+    telegramSend,
+    checkRemoteTelegramSupport,
   } from '$lib/ipc';
   import { timerState } from '$lib/stores/timer';
   import { settings } from '$lib/stores/settings';
@@ -221,6 +223,26 @@
               body = m.notification_long_break_body();
             }
             notificationShow(title, body).catch(() => {});
+          }
+
+          if (
+            $settings.telegram_enabled &&
+            $settings.telegram_bot_token &&
+            $settings.telegram_chat_id &&
+            timerMode === 'pomodoro'
+          ) {
+            checkRemoteTelegramSupport().then((serverHandles) => {
+              if (!serverHandles) {
+                const taskName = nextSnap.current_task || 'General';
+                const msg =
+                  nextSnap.round_type === 'work'
+                    ? `☕ ¡Descanso terminado! Hora de volver a concentrarse en ${taskName}.`
+                    : `🍅 ¡Tiempo de concentración terminado! Tarea: ${taskName}. Toca descansar ${Math.round((nextSnap.total_secs || 300) / 60)} min.`;
+                telegramSend($settings.telegram_bot_token, $settings.telegram_chat_id, msg).catch((e) => {
+                  console.warn('Error sending Telegram notification:', e);
+                });
+              }
+            });
           }
         }),
         await onTimerReset((resetSnap) => {

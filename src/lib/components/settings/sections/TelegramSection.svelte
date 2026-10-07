@@ -16,22 +16,38 @@
   let statusMessage = $state<string>('');
 
   async function toggleTelegram() {
-    const nextVal = !$settings.telegram_enabled;
-    const updated = await setSetting('telegram_enabled', nextVal ? 'true' : 'false');
-    settings.set(updated);
+    try {
+      const nextVal = !$settings.telegram_enabled;
+      settings.update((s) => ({ ...s, telegram_enabled: nextVal }));
+      const updated = await setSetting('telegram_enabled', nextVal ? 'true' : 'false');
+      settings.set(updated);
+    } catch (err) {
+      console.error('Failed to toggle telegram:', err);
+      settings.update((s) => ({ ...s, telegram_enabled: !$settings.telegram_enabled }));
+    }
   }
 
   async function handleTokenBlur() {
-    if (botToken !== $settings.telegram_bot_token) {
-      const updated = await setSetting('telegram_bot_token', botToken.trim());
-      settings.set(updated);
+    try {
+      if (botToken !== $settings.telegram_bot_token) {
+        settings.update((s) => ({ ...s, telegram_bot_token: botToken.trim() }));
+        const updated = await setSetting('telegram_bot_token', botToken.trim());
+        settings.set(updated);
+      }
+    } catch (err) {
+      console.error('Failed to save bot token:', err);
     }
   }
 
   async function handleChatIdBlur() {
-    if (chatId !== $settings.telegram_chat_id) {
-      const updated = await setSetting('telegram_chat_id', chatId.trim());
-      settings.set(updated);
+    try {
+      if (chatId !== $settings.telegram_chat_id) {
+        settings.update((s) => ({ ...s, telegram_chat_id: chatId.trim() }));
+        const updated = await setSetting('telegram_chat_id', chatId.trim());
+        settings.set(updated);
+      }
+    } catch (err) {
+      console.error('Failed to save chat id:', err);
     }
   }
 

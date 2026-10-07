@@ -34,7 +34,7 @@ use commands::{
     sessions_clear,
     stats_get_detailed, stats_get_heatmap,
     stats_get_daily_by_date, stats_get_weekly_by_offset,
-    telegram_test,
+    telegram_test, telegram_send,
     themes_list,
     timer_get_state, timer_reset, timer_restart_round, timer_skip, timer_toggle, timer_set_task,
     tasks_list, tasks_get_summary, tasks_create, tasks_rename, tasks_toggle_complete, tasks_delete, tasks_restore,
@@ -425,6 +425,7 @@ pub fn run() {
             settings_reset_defaults,
             // Telegram
             telegram_test,
+            telegram_send,
             // Themes
             themes_list,
             // Sessions

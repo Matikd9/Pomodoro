@@ -1025,6 +1025,12 @@ pub async fn telegram_test(bot_token: String, chat_id: String) -> Result<String,
     crate::telegram::test_telegram_connection(&bot_token, &chat_id).await
 }
 
+/// Sends a notification message to Telegram.
+#[tauri::command]
+pub async fn telegram_send(bot_token: String, chat_id: String, message: String) -> Result<(), String> {
+    crate::telegram::send_telegram_message(&bot_token, &chat_id, &message).await
+}
+
 #[cfg(test)]
 mod tests {
     use rusqlite::Connection;

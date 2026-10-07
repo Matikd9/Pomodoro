@@ -480,6 +480,7 @@ async fn main() {
         .route("/api/sessions/clear", post(api_sessions_clear))
         .route("/api/themes", get(api_themes_list))
         .route("/api/telegram/test", post(api_telegram_test))
+        .route("/api/telegram/send", post(api_telegram_send))
         // WebSocket
         .route("/ws", get(ws_handler))
         .with_state(controller)
@@ -991,6 +992,22 @@ async fn api_telegram_test(
 ) -> Result<Json<String>, (StatusCode, String)> {
     match telegram::test_telegram_connection(&req.bot_token, &req.chat_id).await {
         Ok(msg) => Ok(Json(msg)),
+        Err(err) => Err((StatusCode::BAD_REQUEST, err)),
+    }
+}
+
+#[derive(Deserialize)]
+struct TelegramSendReq {
+    bot_token: String,
+    chat_id: String,
+    message: String,
+}
+
+async fn api_telegram_send(
+    Json(req): Json<TelegramSendReq>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    match telegram::send_telegram_message(&req.bot_token, &req.chat_id, &req.message).await {
+        Ok(()) => Ok(StatusCode::OK),
         Err(err) => Err((StatusCode::BAD_REQUEST, err)),
     }
 }

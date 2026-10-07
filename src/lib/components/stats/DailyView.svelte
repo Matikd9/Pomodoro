@@ -102,8 +102,25 @@
     loadDate(next);
   }
 
-  const byHour = $derived(currentDaily?.by_hour ?? Array(24).fill(0));
-  const maxHour = $derived(Math.max(1, ...byHour));
+  const byHourMins = $derived.by(() => {
+    if (!currentDaily || !currentDaily.by_hour) return Array(24).fill(0);
+    const raw = currentDaily.by_hour;
+    const rawSum = raw.reduce((a, b) => a + b, 0);
+    // If backend returns rounds (sum matches rounds and is significantly smaller than focus_mins), convert to minutes.
+    const isRoundsFormat =
+      currentDaily.focus_mins > 0 &&
+      currentDaily.rounds > 0 &&
+      rawSum > 0 &&
+      Math.abs(rawSum - currentDaily.rounds) < 0.5 &&
+      rawSum * 3 < currentDaily.focus_mins;
+
+    if (isRoundsFormat) {
+      const ratio = currentDaily.focus_mins / currentDaily.rounds;
+      return raw.map((r) => r * ratio);
+    }
+    return raw;
+  });
+  const maxHour = $derived(Math.max(1, ...byHourMins));
   const hasData = $derived(currentDaily !== null && currentDaily.rounds > 0);
 
   // Hour labels: show every 6 hours
@@ -190,7 +207,7 @@
         viewBox="0 0 {CHART_W} {CHART_H + 28}"
         class="chart"
       >
-        {#each byHour as count, h}
+        {#each byHourMins as count, h}
           {@const barH = Math.max(2, Math.round((count / maxHour) * CHART_H))}
           {@const x = h * (BAR_W + BAR_GAP)}
           {@const y = CHART_H - barH}

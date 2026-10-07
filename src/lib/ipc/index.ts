@@ -789,30 +789,139 @@ export const obsidianExportWeekly = async (weekOffset = 0): Promise<ObsidianExpo
 
 // --- Settings commands ---
 
-export const getSettings = async () => {
+export function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
+  const getLocalBool = (k: string, def: boolean): boolean => {
+    if (typeof window === 'undefined') return def;
+    const v = localStorage.getItem(k);
+    return v !== null ? v === 'true' : def;
+  };
+  const getLocalStr = (k: string, def: string): string => {
+    if (typeof window === 'undefined') return def;
+    const v = localStorage.getItem(k);
+    return v !== null ? v : def;
+  };
+
+  const s = raw ?? {};
+  return {
+    always_on_top: Boolean(s.always_on_top ?? false),
+    break_always_on_top: Boolean(s.break_always_on_top ?? false),
+    auto_start_work: Boolean(s.auto_start_work ?? false),
+    auto_start_break: Boolean(s.auto_start_break ?? false),
+    tray_icon_enabled: Boolean(s.tray_icon_enabled ?? false),
+    min_to_tray: Boolean(s.min_to_tray ?? false),
+    min_to_tray_on_close: Boolean(s.min_to_tray_on_close ?? false),
+    notifications_enabled: Boolean(s.notifications_enabled ?? false),
+    long_break_interval: Number(s.long_break_interval ?? 4),
+    weekly_goal_hours: Number(s.weekly_goal_hours ?? 15),
+    short_breaks_enabled: Boolean(s.short_breaks_enabled ?? true),
+    long_breaks_enabled: Boolean(s.long_breaks_enabled ?? true),
+    dial_countdown: Boolean(s.dial_countdown ?? true),
+    theme_mode: s.theme_mode ?? 'auto',
+    theme_light: s.theme_light ?? 'Pomotroid Light',
+    theme_dark: s.theme_dark ?? 'Pomotroid',
+    tick_sounds_during_work: Boolean(s.tick_sounds_during_work ?? false),
+    tick_sounds_during_break: Boolean(s.tick_sounds_during_break ?? false),
+    time_work_secs: Number(s.time_work_secs ?? 1500),
+    time_short_break_secs: Number(s.time_short_break_secs ?? 300),
+    time_long_break_secs: Number(s.time_long_break_secs ?? 900),
+    volume: Number(s.volume ?? 1.0),
+    shortcut_toggle: s.shortcut_toggle ?? 'Control+F1',
+    shortcut_reset: s.shortcut_reset ?? 'Control+F2',
+    shortcut_skip: s.shortcut_skip ?? 'Control+F3',
+    shortcut_restart: s.shortcut_restart ?? 'Control+F4',
+    websocket_enabled: Boolean(s.websocket_enabled ?? false),
+    websocket_port: Number(s.websocket_port ?? 1314),
+    language: s.language ?? 'auto',
+    verbose_logging: Boolean(s.verbose_logging ?? false),
+    check_for_updates: Boolean(s.check_for_updates ?? true),
+    global_shortcuts_enabled: Boolean(s.global_shortcuts_enabled ?? false),
+    local_shortcut_toggle: s.local_shortcut_toggle ?? ' ',
+    local_shortcut_reset: s.local_shortcut_reset ?? 'ArrowLeft',
+    local_shortcut_skip: s.local_shortcut_skip ?? 'ArrowRight',
+    local_shortcut_volume_down: s.local_shortcut_volume_down ?? 'ArrowDown',
+    local_shortcut_volume_up: s.local_shortcut_volume_up ?? 'ArrowUp',
+    local_shortcut_mute: s.local_shortcut_mute ?? 'm',
+    local_shortcut_fullscreen: s.local_shortcut_fullscreen ?? 'F11',
+    active_preset: s.active_preset ?? 'Default',
+    telegram_enabled:
+      typeof s.telegram_enabled === 'boolean'
+        ? s.telegram_enabled
+        : getLocalBool('pomotroid_telegram_enabled', false),
+    telegram_bot_token:
+      typeof s.telegram_bot_token === 'string' && s.telegram_bot_token.length > 0
+        ? s.telegram_bot_token
+        : getLocalStr('pomotroid_telegram_bot_token', ''),
+    telegram_chat_id:
+      typeof s.telegram_chat_id === 'string' && s.telegram_chat_id.length > 0
+        ? s.telegram_chat_id
+        : getLocalStr('pomotroid_telegram_chat_id', ''),
+    timer_mode:
+      typeof s.timer_mode === 'string'
+        ? s.timer_mode
+        : getLocalStr('pomotroid_timer_mode', 'pomodoro'),
+    window_x: s.window_x ?? null,
+    window_y: s.window_y ?? null,
+    window_width: s.window_width ?? null,
+    window_height: s.window_height ?? null,
+  };
+}
+
+export const getSettings = async (): Promise<Settings> => {
+  let raw: Partial<Settings>;
   if (isRemoteMode()) {
     try {
-      return await remoteFetch<Settings>('/api/settings');
+      raw = await remoteFetch<Settings>('/api/settings');
     } catch (err) {
       console.warn('Failed to fetch settings from remote, falling back to local:', err);
       if (isTauri) {
-        return invoke<Settings>('settings_get');
+        raw = await invoke<Settings>('settings_get');
+      } else {
+        throw err;
       }
-      throw err;
     }
+  } else {
+    raw = await invoke<Settings>('settings_get');
   }
-  return invoke<Settings>('settings_get');
+  return normalizeSettings(raw);
 };
 
 /** Save a single setting key/value pair and receive the full updated settings. */
-export const setSetting = async (key: string, value: string) => {
-  if (isRemoteMode()) {
-    return remoteFetch<Settings>('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({ key, value }),
-    });
+export const setSetting = async (key: string, value: string): Promise<Settings> => {
+  if (typeof window !== 'undefined') {
+    if (key === 'telegram_enabled') localStorage.setItem('pomotroid_telegram_enabled', value);
+    if (key === 'telegram_bot_token') localStorage.setItem('pomotroid_telegram_bot_token', value);
+    if (key === 'telegram_chat_id') localStorage.setItem('pomotroid_telegram_chat_id', value);
+    if (key === 'timer_mode') localStorage.setItem('pomotroid_timer_mode', value);
   }
-  return invoke<Settings>('settings_set', { key, value });
+  if (isTauri) {
+    invoke<Settings>('settings_set', { key, value }).catch(() => {});
+  }
+  let updated: Partial<Settings>;
+  if (isRemoteMode()) {
+    try {
+      updated = await remoteFetch<Settings>('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({ key, value }),
+      });
+    } catch (err) {
+      console.warn(`Remote setSetting(${key}) failed, falling back to local:`, err);
+      if (isTauri) {
+        updated = await invoke<Settings>('settings_set', { key, value });
+      } else {
+        throw err;
+      }
+    }
+  } else {
+    updated = await invoke<Settings>('settings_set', { key, value });
+  }
+
+  const normalized = normalizeSettings(updated);
+  if (key === 'telegram_enabled') normalized.telegram_enabled = value === 'true';
+  if (key === 'telegram_bot_token') normalized.telegram_bot_token = value;
+  if (key === 'telegram_chat_id') normalized.telegram_chat_id = value;
+  if (key === 'timer_mode') normalized.timer_mode = value;
+
+  return normalized;
 };
 
 export const resetSettings = async () => {
@@ -877,14 +986,79 @@ export const telegramTest = async (botToken: string, chatId: string): Promise<st
         body: JSON.stringify({ bot_token: botToken, chat_id: chatId }),
       });
     } catch (err) {
+      console.warn('Remote telegram_test failed, attempting local/direct fallback:', err);
       if (isTauri) {
         return invoke<string>('telegram_test', { botToken, chatId });
       }
-      throw err;
+      const resp = await fetch(`https://api.telegram.org/bot${botToken.trim()}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId.trim(),
+          text: '🤖 ¡Conexión exitosa! Las notificaciones de Pomotroid están listas.',
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.description || 'Error comunicando con Telegram');
+      }
+      return 'Mensaje de prueba enviado exitosamente a tu Telegram.';
     }
   }
   return invoke<string>('telegram_test', { botToken, chatId });
 };
+
+export const telegramSend = async (botToken: string, chatId: string, message: string): Promise<void> => {
+  if (!botToken.trim() || !chatId.trim() || !message.trim()) return;
+  if (isRemoteMode()) {
+    try {
+      await remoteFetch<void>('/api/telegram/send', {
+        method: 'POST',
+        body: JSON.stringify({ bot_token: botToken, chat_id: chatId, message }),
+      });
+      return;
+    } catch {
+      // Remote server does not support /api/telegram/send yet, fall through to client
+    }
+  }
+  if (isTauri) {
+    try {
+      await invoke<void>('telegram_send', { botToken, chatId, message });
+      return;
+    } catch {
+      // Fall through to browser fetch
+    }
+  }
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken.trim()}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId.trim(), text: message }),
+    });
+  } catch (err) {
+    console.warn('Failed to send Telegram message from client:', err);
+  }
+};
+
+let remoteSupportsTelegram: boolean | null = null;
+
+export async function checkRemoteTelegramSupport(): Promise<boolean> {
+  if (!isRemoteMode()) return true;
+  if (remoteSupportsTelegram !== null) return remoteSupportsTelegram;
+  try {
+    const base = getRemoteServerUrl();
+    const res = await fetch(`${base}/api/telegram/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot_token: '', chat_id: '' }),
+    });
+    // 405 or 404 indicates the route does not exist on the running remote server
+    remoteSupportsTelegram = res.status !== 404 && res.status !== 405;
+  } catch {
+    remoteSupportsTelegram = false;
+  }
+  return remoteSupportsTelegram;
+}
 
 // --- Window commands ---
 
