@@ -20,12 +20,16 @@ use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 
-// Import shared business logic from src-tauri
 #[path = "../../src-tauri/src/db/migrations.rs"]
 pub mod migrations;
 
 #[path = "../../src-tauri/src/db/queries.rs"]
 pub mod queries;
+
+pub mod db {
+    pub use crate::migrations;
+    pub use crate::queries;
+}
 
 #[path = "../../src-tauri/src/obsidian.rs"]
 pub mod obsidian;
@@ -247,6 +251,7 @@ async fn main() {
         let db_thread = Arc::clone(&db_arc);
         let task_thread = Arc::clone(&current_task);
         let tx = broadcast_tx.clone();
+        let tokio_handle = tokio::runtime::Handle::current();
 
         std::thread::Builder::new()
             .name("server-timer-events".to_string())
@@ -361,7 +366,7 @@ async fn main() {
                                         format!("☕ ¡Descanso terminado! Hora de volver a concentrarse en {task_name}.")
                                     }
                                 };
-                                tokio::spawn(async move {
+                                tokio_handle.spawn(async move {
                                     if let Err(e) = telegram::send_telegram_message(&bot_token, &chat_id, &msg).await {
                                         log::warn!("[server] Error enviando notificación Telegram: {e}");
                                     }

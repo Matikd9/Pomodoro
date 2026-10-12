@@ -420,7 +420,7 @@ fn listen_events(
                             format!("☕ ¡Descanso terminado! Hora de volver a concentrarse en {task_name}.")
                         }
                     };
-                    tokio::spawn(async move {
+                    tauri::async_runtime::spawn(async move {
                         if let Err(e) = crate::telegram::send_telegram_message(&bot_token, &chat_id, &msg).await {
                             log::warn!("[telegram] Error enviando notificación: {e}");
                         }

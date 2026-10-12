@@ -65,6 +65,10 @@ export interface Settings {
   telegram_bot_token: string;
   telegram_chat_id: string;
   timer_mode: string;
+  window_x?: number | null;
+  window_y?: number | null;
+  window_width?: number | null;
+  window_height?: number | null;
 }
 
 /** Returned by `check_update` — describes an available update. */
