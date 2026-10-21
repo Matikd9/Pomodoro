@@ -10,9 +10,10 @@
   interface Props {
     mode?: TimerMode;
     onExpand: () => void;
+    onClose?: () => void;
   }
 
-  let { mode = 'pomodoro', onExpand }: Props = $props();
+  let { mode = 'pomodoro', onExpand, onClose }: Props = $props();
 
   let snap = $derived($timerState);
 
@@ -45,6 +46,10 @@
   });
 
   async function closeApp() {
+    if (onClose) {
+      onClose();
+      return;
+    }
     if (isTauri) {
       await getCurrentWebviewWindow().close();
     }

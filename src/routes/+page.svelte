@@ -3,7 +3,6 @@
   import { onMount } from 'svelte';
   import Titlebar from '$lib/components/Titlebar.svelte';
   import Timer from '$lib/components/Timer.svelte';
-  import MiniPlayer from '$lib/components/MiniPlayer.svelte';
   import { getSettings, getThemes, onSettingsChanged, onThemesChanged, onPresetsChanged, obsidianExportWeekly } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
   import { loadPresets, presets } from '$lib/stores/presets';
@@ -12,8 +11,6 @@
   import { isMac, isTauri } from '$lib/utils/platform';
   import { setLocale } from '$lib/locale.svelte.js';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-  import { LogicalSize, LogicalPosition } from '@tauri-apps/api/dpi';
-  import type { TimerMode } from '$lib/types';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { logInfo as info, logError } from '$lib/utils/log';
   import { createLocalShortcutHandler } from '$lib/utils/localShortcuts';
@@ -36,67 +33,6 @@
 
   let uiScale = $state(1.0);
   let isCompact = $state(false);
-  let isMiniPlayer = $state(false);
-
-  async function toggleMiniPlayer() {
-    if (!isTauri) {
-      isMiniPlayer = !isMiniPlayer;
-      return;
-    }
-    const win = getCurrentWebviewWindow();
-    if (!isMiniPlayer) {
-      try {
-        const pos = await win.outerPosition();
-        const factor = await win.scaleFactor();
-        const normalPos = { x: Math.round(pos.x / factor), y: Math.round(pos.y / factor) };
-        localStorage.setItem('pomotroid_normal_pos', JSON.stringify(normalPos));
-
-        isMiniPlayer = true;
-
-        await win.setSize(new LogicalSize(240, 80));
-        await win.setResizable(false);
-        await win.setAlwaysOnTop(true);
-
-        const savedMini = localStorage.getItem('pomotroid_mini_pos');
-        if (savedMini) {
-          try {
-            const parsed = JSON.parse(savedMini);
-            if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-              await win.setPosition(new LogicalPosition(parsed.x, parsed.y));
-            }
-          } catch {}
-        }
-      } catch (err) {
-        console.error('Failed to enter mini player mode:', err);
-      }
-    } else {
-      try {
-        const pos = await win.outerPosition();
-        const factor = await win.scaleFactor();
-        const miniPos = { x: Math.round(pos.x / factor), y: Math.round(pos.y / factor) };
-        localStorage.setItem('pomotroid_mini_pos', JSON.stringify(miniPos));
-
-        isMiniPlayer = false;
-
-        await win.setResizable(true);
-        await win.setSize(new LogicalSize(BASE_W, BASE_H));
-
-        const savedNormal = localStorage.getItem('pomotroid_normal_pos');
-        if (savedNormal) {
-          try {
-            const parsed = JSON.parse(savedNormal);
-            if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-              await win.setPosition(new LogicalPosition(parsed.x, parsed.y));
-            }
-          } catch {}
-        }
-
-        await win.setAlwaysOnTop($settings.always_on_top);
-      } catch (err) {
-        console.error('Failed to exit mini player mode:', err);
-      }
-    }
-  }
 
   // Extra bottom padding added to <main> in compact mode.  Shifts the
   // dial upward so the whitespace sits at the bottom rather than being
@@ -243,7 +179,7 @@
 
 <!-- Resize handles — invisible edge/corner strips for decorations-free windows.
      Not needed on macOS where native resizing is provided by decorations:true. -->
-{#if !isMac && !isMiniPlayer}
+{#if !isMac}
   <!-- N -->
   <div class="rh rh-n" onmousedown={() => startResize('North')} role="none"></div>
   <!-- S -->
@@ -262,15 +198,11 @@
   <div class="rh rh-sw" onmousedown={() => startResize('SouthWest')} role="none"></div>
 {/if}
 
-<div class="app" class:mini={isMiniPlayer}>
-  {#if isMiniPlayer}
-    <MiniPlayer mode={$settings.timer_mode as TimerMode} onExpand={toggleMiniPlayer} />
-  {:else}
-    <Titlebar onToggleMini={toggleMiniPlayer} />
-    <main class:compact={isCompact}>
-      <Timer {isCompact} {uiScale} />
-    </main>
-  {/if}
+<div class="app">
+  <Titlebar />
+  <main class:compact={isCompact}>
+    <Timer {isCompact} {uiScale} />
+  </main>
 </div>
 
 <style>

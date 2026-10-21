@@ -102,6 +102,45 @@
     });
   }
 
+  async function openMiniPlayer() {
+    if (!isTauri) return;
+    const existing = await WebviewWindow.getByLabel('mini');
+    if (existing) {
+      await existing.show();
+      await existing.unminimize();
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow('mini', {
+      url: '/mini',
+      title: 'Pomotroid Mini',
+      width: 240,
+      height: 76,
+      resizable: false,
+      maximizable: false,
+      decorations: false,
+      alwaysOnTop: true,
+      shadow: true,
+      visible: false,
+      skipTaskbar: false,
+    });
+
+    suppressRestoredTitlebarState();
+    if ($settings.min_to_tray) {
+      await setWindowVisibility(false);
+    } else {
+      await getCurrentWebviewWindow().minimize();
+    }
+  }
+
+  async function handleMiniClick() {
+    if (onToggleMini) {
+      onToggleMini();
+    } else {
+      await openMiniPlayer();
+    }
+  }
+
   async function minimize() {
     if (!isTauri) return;
     suppressRestoredTitlebarState();
@@ -196,6 +235,17 @@
   </Tooltip>
 {/snippet}
 
+{#snippet miniBtn()}
+  <Tooltip text="Mini Player (PiP)">
+    <button class="btn-icon" onclick={handleMiniClick} aria-label="Mini Player">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+        <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" />
+        <rect x="7" y="7" width="5" height="4" rx="0.8" fill="currentColor" />
+      </svg>
+    </button>
+  </Tooltip>
+{/snippet}
+
 <nav class="titlebar" class:suppress-hover={suppressTitlebarHover} data-tauri-drag-region>
   <!-- Left: settings + stats buttons on Linux/Windows. On macOS the traffic
        lights live here; the action buttons move to the right side instead. -->
@@ -207,29 +257,13 @@
   <!-- Right: settings + stats buttons on macOS, window controls on Linux/Windows. -->
   <div class="controls">
     {#if isMac}
-      {#if onToggleMini}
-        <Tooltip text="Mini Player (PiP)">
-          <button class="btn-icon" onclick={onToggleMini} aria-label="Mini Player">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" />
-              <rect x="7" y="7" width="5" height="4" rx="0.8" fill="currentColor" />
-            </svg>
-          </button>
-        </Tooltip>
+      {#if isTauri}
+        {@render miniBtn()}
       {/if}
       {@render statsBtn()}
       {@render settingsBtn()}
     {:else if isTauri}
-      {#if onToggleMini}
-        <Tooltip text="Mini Player (PiP)">
-          <button class="btn-icon" onclick={onToggleMini} aria-label="Mini Player">
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" />
-              <rect x="7" y="7" width="5" height="4" rx="0.8" fill="currentColor" />
-            </svg>
-          </button>
-        </Tooltip>
-      {/if}
+      {@render miniBtn()}
       <button class="btn-icon" onclick={minimize} aria-label="Minimize">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line
