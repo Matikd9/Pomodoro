@@ -138,11 +138,24 @@
       const savedMode = localStorage.getItem('pomotroid_timer_mode');
       if (savedMode === 'continuous' || savedMode === 'pomodoro') {
         timerMode = savedMode;
+        if ($settings.timer_mode !== savedMode) {
+          setSetting('timer_mode', savedMode).catch(() => {});
+        }
       }
       const savedBase = localStorage.getItem('pomotroid_continuous_base');
       if (savedBase) {
         continuousBaseSecs = parseInt(savedBase, 10) || 0;
       }
+
+      const onStorage = (e: StorageEvent) => {
+        if (e.key === 'pomotroid_timer_mode' && e.newValue) {
+          if (e.newValue === 'continuous' || e.newValue === 'pomodoro') {
+            timerMode = e.newValue;
+          }
+        }
+      };
+      window.addEventListener('storage', onStorage);
+      cleanups.push(() => window.removeEventListener('storage', onStorage));
     }
 
     // Async setup: hydrate state and register event listeners.

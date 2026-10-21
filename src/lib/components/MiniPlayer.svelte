@@ -17,12 +17,16 @@
 
   let snap = $derived($timerState);
 
+  // In continuous mode: count up (stopwatch).
+  // In pomodoro mode: count down (timer).
+  const isContinuous = $derived(mode === 'continuous' || snap.total_secs === 0);
+
   // Remaining time in pomodoro mode, elapsed in continuous mode
   const displaySecs = $derived.by(() => {
-    if (mode === 'continuous') {
+    if (isContinuous) {
       return snap.elapsed_secs;
     }
-    const total = snap.total_secs || 1500;
+    const total = snap.total_secs > 0 ? snap.total_secs : 1500;
     return Math.max(0, total - snap.elapsed_secs);
   });
 
@@ -32,17 +36,27 @@
     const mins = Math.floor((s % 3600) / 60);
     const secs = s % 60;
     const pad = (n: number) => String(n).padStart(2, '0');
-    if (hours > 0) {
+    if (hours > 0 && isContinuous) {
       return `${hours}:${pad(mins)}:${pad(secs)}`;
     }
     return `${pad(mins)}:${pad(secs)}`;
   });
 
-  const timerColor = $derived.by(() => {
-    if (mode === 'continuous') return 'var(--color-focus-round)';
-    if (snap.round_type === 'work') return 'var(--color-focus-round)';
-    if (snap.round_type === 'short-break') return 'var(--color-short-round)';
-    return 'var(--color-long-round)';
+  // Break state in Pomodoro mode
+  const isBreak = $derived(
+    !isContinuous &&
+    (snap.round_type === 'short-break' || snap.round_type === 'long-break')
+  );
+
+  // Color: Red for focus/continuous, Green for break
+  const timerColor = $derived(
+    isBreak ? 'var(--color-short-round)' : 'var(--color-focus-round)'
+  );
+
+  const roundBadgeText = $derived.by(() => {
+    if (isContinuous) return 'Continuo';
+    if (isBreak) return 'Descanso';
+    return 'Focus';
   });
 
   async function closeApp() {
@@ -57,13 +71,24 @@
 </script>
 
 <div class="mini-player" data-tauri-drag-region>
-  <!-- Left: Time + Status Dot -->
-  <div class="time-block" data-tauri-drag-region>
-    <span class="status-dot" style="background-color: {timerColor}"></span>
-    <span class="time-text" style="color: {timerColor}">
-      {formattedTime}
-    </span>
-  </div>
+  <!-- Left: Time + Status Dot + Round Badge -->
+  <Tooltip text={`${roundBadgeText}: ${formattedTime}`}>
+    <div class="time-block" data-tauri-drag-region>
+      <span
+        class="status-dot"
+        class:running={snap.is_running}
+        style="background-color: {timerColor}; color: {timerColor};"
+      ></span>
+      <div class="time-col" data-tauri-drag-region>
+        <span class="time-text" style="color: {timerColor}">
+          {formattedTime}
+        </span>
+        <span class="round-badge" style="color: {timerColor}">
+          {roundBadgeText}
+        </span>
+      </div>
+    </div>
+  </Tooltip>
 
   <!-- Right: Action Controls -->
   <div class="controls-block">
@@ -84,7 +109,7 @@
     </Tooltip>
 
     <!-- Skip (only in pomodoro mode) -->
-    {#if mode === 'pomodoro'}
+    {#if !isContinuous}
       <Tooltip text={m.tooltip_skip()}>
         <button class="mini-btn" onclick={timerSkip} aria-label="Skip round">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -127,7 +152,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 14px;
+    padding: 0 12px;
     background-color: var(--color-background);
     color: var(--color-foreground);
     user-select: none;
@@ -137,7 +162,14 @@
   .time-block {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
+    cursor: grab;
+  }
+
+  .time-col {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     cursor: grab;
   }
 
@@ -146,13 +178,28 @@
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .status-dot.running {
+    box-shadow: 0 0 6px currentColor;
   }
 
   .time-text {
     font-family: inherit;
-    font-size: 26px;
+    font-size: 21px;
     font-weight: 700;
     letter-spacing: -0.5px;
+    line-height: 1;
+  }
+
+  .round-badge {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    margin-top: 2px;
     line-height: 1;
   }
 

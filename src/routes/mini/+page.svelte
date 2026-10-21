@@ -25,6 +25,8 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import type { TimerMode } from '$lib/types';
 
+  let currentMode = $state<TimerMode>('pomodoro');
+
   async function saveMiniPosition() {
     if (!isTauri) return;
     try {
@@ -70,10 +72,29 @@
   onMount(() => {
     const cleanups: UnlistenFn[] = [];
 
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('pomotroid_timer_mode');
+      if (saved === 'continuous' || saved === 'pomodoro') {
+        currentMode = saved;
+      }
+      const onStorage = (e: StorageEvent) => {
+        if (e.key === 'pomotroid_timer_mode' && e.newValue) {
+          if (e.newValue === 'continuous' || e.newValue === 'pomodoro') {
+            currentMode = e.newValue;
+          }
+        }
+      };
+      window.addEventListener('storage', onStorage);
+      cleanups.push(() => window.removeEventListener('storage', onStorage));
+    }
+
     (async () => {
       try {
         const s = await getSettings();
         settings.set(s);
+        if (s.timer_mode === 'continuous' || s.timer_mode === 'pomodoro') {
+          currentMode = s.timer_mode as TimerMode;
+        }
         setLocale(s.language);
 
         const initialTimer = await getTimerState();
@@ -118,6 +139,9 @@
           }),
           await onSettingsChanged((updated) => {
             settings.set(updated);
+            if (updated.timer_mode === 'continuous' || updated.timer_mode === 'pomodoro') {
+              currentMode = updated.timer_mode as TimerMode;
+            }
             const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const t = themes.find((th) => th.name === resolveThemeName(updated, dark)) ?? themes[0];
             if (t) applyTheme(t);
@@ -162,7 +186,7 @@
 
 <div class="mini-container">
   <MiniPlayer
-    mode={$settings.timer_mode as TimerMode}
+    mode={currentMode}
     onExpand={handleExpand}
     onClose={handleClose}
   />
