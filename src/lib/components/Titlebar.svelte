@@ -10,6 +10,12 @@
   let maximized = $state(false);
   let suppressTitlebarHover = $state(false);
 
+  interface Props {
+    onToggleMini?: () => void;
+  }
+
+  let { onToggleMini }: Props = $props();
+
   function blurTitlebarControl() {
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.closest('.titlebar')) active.blur();
@@ -201,9 +207,29 @@
   <!-- Right: settings + stats buttons on macOS, window controls on Linux/Windows. -->
   <div class="controls">
     {#if isMac}
+      {#if onToggleMini}
+        <Tooltip text="Mini Player (PiP)">
+          <button class="btn-icon" onclick={onToggleMini} aria-label="Mini Player">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" />
+              <rect x="7" y="7" width="5" height="4" rx="0.8" fill="currentColor" />
+            </svg>
+          </button>
+        </Tooltip>
+      {/if}
       {@render statsBtn()}
       {@render settingsBtn()}
     {:else if isTauri}
+      {#if onToggleMini}
+        <Tooltip text="Mini Player (PiP)">
+          <button class="btn-icon" onclick={onToggleMini} aria-label="Mini Player">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" stroke-width="1.3" />
+              <rect x="7" y="7" width="5" height="4" rx="0.8" fill="currentColor" />
+            </svg>
+          </button>
+        </Tooltip>
+      {/if}
       <button class="btn-icon" onclick={minimize} aria-label="Minimize">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line

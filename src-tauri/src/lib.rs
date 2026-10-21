@@ -377,14 +377,15 @@ pub fn run() {
                         }
                     }
                     tauri::WindowEvent::Resized(size) => {
-                        if let Ok(conn) = db_for_pos.lock() {
-                            let _ = settings::save_setting(&conn, "window_width", &size.width.to_string());
-                            let _ = settings::save_setting(&conn, "window_height", &size.height.to_string());
-                            // Also capture position, since some window managers shift the
-                            // window origin when resizing.
-                            if let Ok(pos) = win_for_pos.outer_position() {
-                                let _ = settings::save_setting(&conn, "window_x", &pos.x.to_string());
-                                let _ = settings::save_setting(&conn, "window_y", &pos.y.to_string());
+                        // Only save normal window dimensions, ignore mini-player dimensions (< 200px height)
+                        if size.height >= 200 {
+                            if let Ok(conn) = db_for_pos.lock() {
+                                let _ = settings::save_setting(&conn, "window_width", &size.width.to_string());
+                                let _ = settings::save_setting(&conn, "window_height", &size.height.to_string());
+                                if let Ok(pos) = win_for_pos.outer_position() {
+                                    let _ = settings::save_setting(&conn, "window_x", &pos.x.to_string());
+                                    let _ = settings::save_setting(&conn, "window_y", &pos.y.to_string());
+                                }
                             }
                         }
                     }

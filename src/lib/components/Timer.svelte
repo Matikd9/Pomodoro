@@ -177,36 +177,10 @@
           }));
         }),
         await onRoundChange(async (nextSnap) => {
-          if (timerMode === 'continuous') {
-            // In continuous mode, if the server reached total duration and shifted to break,
-            // the completed work session has already been saved to SQLite.
-            // Accumulate duration and immediately skip break to continue focus uninterrupted.
-            if (nextSnap.round_type !== 'work') {
-              const finishedDuration = nextSnap.previous_round_type === 'work' ? (snap.total_secs || 1500) : 0;
-              continuousBaseSecs += finishedDuration;
-              if (typeof window !== 'undefined') {
-                localStorage.setItem('pomotroid_continuous_base', String(continuousBaseSecs));
-              }
-              if ($settings.notifications_enabled) {
-                const title = m.notification_continuous_title();
-                const body = m.notification_continuous_body();
-                notificationShow(title, body).catch(() => {});
-              }
-              try {
-                await timerSkip();
-                const latest = await getTimerState();
-                if (!latest.is_running) {
-                  await timerToggle();
-                }
-              } catch (err) {
-                console.error('Error auto-skipping break in continuous mode:', err);
-              }
-              return;
-            }
-          }
-
           timerState.set(nextSnap);
-          if ($settings.notifications_enabled && timerMode === 'pomodoro') {
+          if (timerMode !== 'pomodoro') return;
+
+          if ($settings.notifications_enabled) {
             let title: string;
             let body: string;
             if (nextSnap.round_type === 'work') {
@@ -228,8 +202,7 @@
           if (
             $settings.telegram_enabled &&
             $settings.telegram_bot_token &&
-            $settings.telegram_chat_id &&
-            timerMode === 'pomodoro'
+            $settings.telegram_chat_id
           ) {
             checkRemoteTelegramSupport().then((serverHandles) => {
               if (!serverHandles) {

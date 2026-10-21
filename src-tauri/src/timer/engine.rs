@@ -175,8 +175,8 @@ fn run_loop(
                 }
                 Ok(TimerCommand::Prime { duration_secs: d }) => {
                     // Clamp so a stale Prime never causes immediate completion
-                    // on the next Resume tick.
-                    total_secs = d.max(elapsed_secs.saturating_add(1));
+                    // on the next Resume tick. If d == 0 (continuous mode), keep 0.
+                    total_secs = if d == 0 { 0 } else { d.max(elapsed_secs.saturating_add(1)) };
                     Transition::Stay
                 }
                 Ok(TimerCommand::Shutdown) | Err(_) => Transition::Break,
@@ -197,7 +197,7 @@ fn run_loop(
                         elapsed_secs = seg.elapsed_at_start + seg.ticks;
                         let _ = event_tx.send(TimerEvent::Tick { elapsed_secs, total_secs });
 
-                        if elapsed_secs >= total_secs {
+                        if total_secs > 0 && elapsed_secs >= total_secs {
                             let _ = event_tx.send(TimerEvent::Complete { skipped: false });
                             elapsed_secs = 0;
                             Transition::To(Phase::Idle)
@@ -234,8 +234,8 @@ fn run_loop(
                     Ok(TimerCommand::Prime { duration_secs: d }) => {
                         // Clamp so a stale Prime arriving while the timer is
                         // running never causes an immediate spurious completion
-                        // on the next tick.
-                        total_secs = d.max(elapsed_secs.saturating_add(1));
+                        // on the next tick. If d == 0 (continuous mode), keep 0.
+                        total_secs = if d == 0 { 0 } else { d.max(elapsed_secs.saturating_add(1)) };
                         Transition::Stay
                     }
                     Ok(TimerCommand::Shutdown) => Transition::Break,
@@ -332,13 +332,25 @@ mod tests {
         let (handle, rx) = spawn(6, TICK);
         handle.send(TimerCommand::Start);
 
-        // Let 2 ticks fire, then pause.
-        std::thread::sleep(TICK * 2 + TICK / 2);
+        // Wait until 2 ticks fire, then pause.
+        let mut ticks = 0;
+        let mut events_before_resume = Vec::new();
+        while ticks < 2 {
+            if let Ok(e) = rx.recv_timeout(Duration::from_secs(1)) {
+                if matches!(e, TimerEvent::Tick { .. }) {
+                    ticks += 1;
+                }
+                events_before_resume.push(e);
+            }
+        }
         handle.send(TimerCommand::Pause);
 
-        // Collect events so far.
-        std::thread::sleep(TICK * 3); // no ticks should arrive during this gap
-        let events_before_resume = drain(&rx);
+        // Collect Paused event and ensure no more ticks arrive while paused.
+        if let Ok(e) = rx.recv_timeout(Duration::from_secs(1)) {
+            events_before_resume.push(e);
+        }
+        std::thread::sleep(TICK * 3);
+        events_before_resume.extend(drain(&rx));
 
         let paused = events_before_resume
             .iter()
@@ -413,11 +425,24 @@ mod tests {
         let (handle, rx) = spawn(10, TICK);
         handle.send(TimerCommand::Start);
 
-        // Let 3 ticks fire, then suspend.
-        std::thread::sleep(TICK * 3 + TICK / 2);
+        // Wait until 3 ticks fire, then suspend.
+        let mut ticks = 0;
+        let mut before = Vec::new();
+        while ticks < 3 {
+            if let Ok(e) = rx.recv_timeout(Duration::from_secs(1)) {
+                if matches!(e, TimerEvent::Tick { .. }) {
+                    ticks += 1;
+                }
+                before.push(e);
+            }
+        }
         handle.send(TimerCommand::Suspend);
 
-        let before = drain(&rx);
+        if let Ok(e) = rx.recv_timeout(Duration::from_secs(1)) {
+            before.push(e);
+        }
+        before.extend(drain(&rx));
+
         let suspended_elapsed = before.iter().find_map(|e| {
             if let TimerEvent::Suspended { elapsed_secs } = e {
                 Some(*elapsed_secs)

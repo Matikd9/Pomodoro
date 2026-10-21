@@ -397,10 +397,11 @@ async fn main() {
                         TimerEvent::Reset => {
                             let is_work = seq_thread.lock().unwrap().current_round == RoundType::Work;
                             let elapsed = shared_thread.lock().unwrap().elapsed_secs;
+                            let is_continuous = settings_thread.lock().unwrap().timer_mode == "continuous";
                             if is_work {
                                 if let Some(session_id) = current_session_id.take() {
                                     if let Ok(conn) = db_thread.lock() {
-                                        let _ = queries::complete_session(&conn, session_id, elapsed, false);
+                                        let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
                                     }
                                 }
                             }

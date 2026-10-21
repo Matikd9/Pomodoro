@@ -427,14 +427,16 @@ fn listen_events(
                     });
                 }
 
-                // Audio alert for the new round.
-                if let Some(audio) = app.try_state::<Arc<AudioManager>>() {
-                    let cue = match next_round {
-                        RoundType::Work => AudioCue::WorkAlert,
-                        RoundType::ShortBreak => AudioCue::ShortBreakAlert,
-                        RoundType::LongBreak => AudioCue::LongBreakAlert,
-                    };
-                    audio.play_cue(cue);
+                // Audio alert for the new round (only in pomodoro mode).
+                if settings.lock().unwrap().timer_mode == "pomodoro" {
+                    if let Some(audio) = app.try_state::<Arc<AudioManager>>() {
+                        let cue = match next_round {
+                            RoundType::Work => AudioCue::WorkAlert,
+                            RoundType::ShortBreak => AudioCue::ShortBreakAlert,
+                            RoundType::LongBreak => AudioCue::LongBreakAlert,
+                        };
+                        audio.play_cue(cue);
+                    }
                 }
 
                 // Lower-priority-during-breaks: when always_on_top is on and
@@ -530,10 +532,11 @@ fn listen_events(
                 // Save current work session if it reached the minimum threshold.
                 let is_work = sequence.lock().unwrap().current_round == RoundType::Work;
                 let elapsed = shared.lock().unwrap().elapsed_secs;
+                let is_continuous = settings.lock().unwrap().timer_mode == "continuous";
                 if is_work {
                     if let Some(session_id) = current_session_id.take() {
                         if let Ok(conn) = db.lock() {
-                            let _ = queries::complete_session(&conn, session_id, elapsed, false);
+                            let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
                         }
                     }
                 }

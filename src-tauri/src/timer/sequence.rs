@@ -63,7 +63,11 @@ impl SequenceState {
     }
 
     /// Duration of the current round in seconds, taken from settings.
+    /// In continuous mode, duration is 0 (unbounded stopwatch).
     pub fn current_duration_secs(&self, settings: &Settings) -> u32 {
+        if settings.timer_mode == "continuous" {
+            return 0;
+        }
         match self.current_round {
             RoundType::Work => settings.time_work_secs,
             RoundType::ShortBreak => settings.time_short_break_secs,
