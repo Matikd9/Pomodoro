@@ -139,6 +139,8 @@ function ensureWebSocket() {
         else if (type === 'settingsChanged') emitWs('settings:changed', payload);
         else if (type === 'sessionsCleared') emitWs('sessions:cleared', undefined);
         else if (type === 'presetsChanged') emitWs('presets:changed', payload);
+        else if (type === 'taskChanged') emitWs('timer:task-changed', payload);
+        else if (type === 'dayChanged') emitWs('timer:day-changed', payload);
       } catch (e) {
         console.error('Failed to parse WS message', e);
       }
@@ -1259,4 +1261,18 @@ export const onPresetsChanged = (cb: (presets: PresetItem[]) => void): Promise<U
     return Promise.resolve(addWsListener('presets:changed', cb));
   }
   return listen<PresetItem[]>('presets:changed', (e) => cb(e.payload));
+};
+
+export const onTaskChanged = (cb: (state: TimerState) => void): Promise<UnlistenFn> => {
+  if (isRemoteMode()) {
+    return Promise.resolve(addWsListener('timer:task-changed', cb));
+  }
+  return listen<TimerState>('timer:task-changed', (e) => cb(e.payload));
+};
+
+export const onDayChanged = (cb: (state: TimerState) => void): Promise<UnlistenFn> => {
+  if (isRemoteMode()) {
+    return Promise.resolve(addWsListener('timer:day-changed', cb));
+  }
+  return listen<TimerState>('timer:day-changed', (e) => cb(e.payload));
 };

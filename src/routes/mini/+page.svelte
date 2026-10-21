@@ -13,6 +13,8 @@
     onTimerResumed,
     onRoundChange,
     onTimerReset,
+    onTaskChanged,
+    onDayChanged,
   } from '$lib/ipc';
   import { settings } from '$lib/stores/settings';
   import { timerState } from '$lib/stores/timer';
@@ -136,6 +138,12 @@
           }),
           await onTimerReset((resetSnap) => {
             timerState.set(resetSnap);
+          }),
+          await onTaskChanged((taskSnap) => {
+            timerState.set(taskSnap);
+          }),
+          await onDayChanged((daySnap) => {
+            timerState.set(daySnap);
           }),
           await onSettingsChanged((updated) => {
             settings.set(updated);

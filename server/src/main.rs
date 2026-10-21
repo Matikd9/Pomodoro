@@ -100,6 +100,8 @@ pub enum WsEvent {
     SettingsChanged { payload: Settings },
     SessionsCleared,
     PresetsChanged { payload: Vec<queries::PresetItem> },
+    TaskChanged { payload: TimerSnapshot },
+    DayChanged { payload: TimerSnapshot },
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +181,12 @@ impl ServerController {
         self.get_snapshot()
     }
 
+    pub fn broadcast_task(&self) {
+        let _ = self.broadcast_tx.send(WsEvent::TaskChanged {
+            payload: self.get_snapshot(),
+        });
+    }
+
     pub fn set_task(&self, task: String) -> TimerSnapshot {
         let clean = if task.trim().is_empty() {
             "General".to_string()
@@ -193,6 +201,7 @@ impl ServerController {
             );
             let _ = queries::create_task(&conn, &clean);
         }
+        self.broadcast_task();
         self.get_snapshot()
     }
 }
@@ -258,8 +267,87 @@ async fn main() {
             .spawn(move || {
                 let mut current_session_id: Option<i64> = None;
                 const MIN_RECORD_SECS: u32 = 120;
+                let mut last_date = if let Ok(conn) = db_thread.lock() {
+                    queries::get_local_today_date(&conn).unwrap_or_default()
+                } else {
+                    String::new()
+                };
 
-                while let Ok(event) = event_rx.recv() {
+                loop {
+                    let event = match event_rx.recv_timeout(Duration::from_millis(500)) {
+                        Ok(e) => Some(e),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    };
+
+                    // --- Day rollover detection (Midnight transition or System Wake) ---
+                    let current_date = if let Ok(conn) = db_thread.lock() {
+                        queries::get_local_today_date(&conn).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    if !current_date.is_empty() && !last_date.is_empty() && current_date != last_date {
+                        log::info!("[server] Day changed from {last_date} to {current_date}");
+                        let is_running = shared_thread.lock().unwrap().is_running;
+
+                        if !is_running {
+                            // Timer was paused or idle overnight
+                            let elapsed = shared_thread.lock().unwrap().elapsed_secs;
+                            let is_continuous = settings_thread.lock().unwrap().timer_mode == "continuous";
+                            if let Some(session_id) = current_session_id.take() {
+                                if let Ok(conn) = db_thread.lock() {
+                                    let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
+                                }
+                            } else if elapsed >= MIN_RECORD_SECS {
+                                let task = task_thread.lock().unwrap().clone();
+                                let total = {
+                                    let seq = seq_thread.lock().unwrap();
+                                    let s = settings_thread.lock().unwrap();
+                                    seq.current_duration_secs(&s)
+                                };
+                                if let Ok(conn) = db_thread.lock() {
+                                    if let Ok(id) = queries::insert_session(&conn, "work", elapsed, total, &task) {
+                                        let _ = queries::complete_session(&conn, id, elapsed, is_continuous);
+                                    }
+                                }
+                            }
+                            current_session_id = None;
+
+                            // Reset timer engine and state
+                            engine_thread.send(TimerCommand::Reset);
+                            {
+                                let mut s = shared_thread.lock().unwrap();
+                                s.elapsed_secs = 0;
+                                s.is_running = false;
+                            }
+                            seq_thread.lock().unwrap().reset();
+
+                            let duration = {
+                                let seq = seq_thread.lock().unwrap();
+                                let s = settings_thread.lock().unwrap();
+                                seq.current_duration_secs(&s)
+                            };
+                            engine_thread.send(TimerCommand::Prime { duration_secs: duration });
+
+                            let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
+                            let _ = tx.send(WsEvent::Reset { payload: snap.clone() });
+                            let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
+                            let _ = tx.send(WsEvent::DayChanged { payload: snap });
+                        } else {
+                            // Timer is running across midnight: do not interrupt, broadcast updated today focus
+                            let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
+                            let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
+                            let _ = tx.send(WsEvent::DayChanged { payload: snap });
+                        }
+
+                        last_date = current_date;
+                    }
+
+                    let Some(event) = event else {
+                        continue;
+                    };
+
                     match event {
                         TimerEvent::Started { total_secs } => {
                             shared_thread.lock().unwrap().is_running = true;
@@ -626,11 +714,17 @@ async fn api_tasks_rename(
         queries::rename_task(&conn, &req.old_name, &req.new_name)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
-    {
+    let changed = {
         let mut cur = ctl.current_task.lock().unwrap();
         if *cur == req.old_name {
-            *cur = req.new_name;
+            *cur = req.new_name.clone();
+            true
+        } else {
+            false
         }
+    };
+    if changed {
+        ctl.broadcast_task();
     }
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let summary = queries::get_tasks_summary(&conn).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -665,6 +759,20 @@ async fn api_tasks_complete(
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::toggle_task_complete(&conn, &req.name, req.completed)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if req.completed {
+        let changed = {
+            let mut cur = ctl.current_task.lock().unwrap();
+            if *cur == req.name {
+                *cur = "General".to_string();
+                true
+            } else {
+                false
+            }
+        };
+        if changed {
+            ctl.broadcast_task();
+        }
+    }
     Ok(Json(tasks))
 }
 
@@ -677,11 +785,17 @@ async fn api_tasks_delete(
     State(ctl): State<Arc<ServerController>>,
     Json(req): Json<DeleteTaskReq>,
 ) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
-    {
+    let changed = {
         let mut cur = ctl.current_task.lock().unwrap();
         if *cur == req.name {
             *cur = "General".to_string();
+            true
+        } else {
+            false
         }
+    };
+    if changed {
+        ctl.broadcast_task();
     }
     let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let tasks = queries::delete_task(&conn, &req.name)

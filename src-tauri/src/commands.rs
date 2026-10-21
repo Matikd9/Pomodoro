@@ -59,9 +59,15 @@ pub fn timer_get_state(timer: State<'_, TimerController>) -> TimerSnapshot {
 
 /// Set the active task/subject for subsequent work sessions and return new snapshot.
 #[tauri::command]
-pub fn timer_set_task(task: String, timer: State<'_, TimerController>) -> TimerSnapshot {
+pub fn timer_set_task(
+    task: String,
+    timer: State<'_, TimerController>,
+    app: AppHandle,
+) -> TimerSnapshot {
     timer.set_task(task);
-    timer.get_snapshot()
+    let snap = timer.get_snapshot();
+    app.emit("timer:task-changed", &snap).ok();
+    snap
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +422,7 @@ pub fn tasks_rename(
     new_name: String,
     db: State<'_, DbState>,
     timer: State<'_, TimerController>,
+    app: AppHandle,
 ) -> Result<Vec<queries::TaskStatsSummary>, String> {
     {
         let conn = db.lock().map_err(|e| e.to_string())?;
@@ -424,6 +431,7 @@ pub fn tasks_rename(
     let snap = timer.get_snapshot();
     if snap.current_task == old_name {
         timer.set_task(new_name);
+        app.emit("timer:task-changed", &timer.get_snapshot()).ok();
     }
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::get_tasks_summary(&conn).map_err(|e| e.to_string())
@@ -435,9 +443,19 @@ pub fn tasks_toggle_complete(
     name: String,
     completed: bool,
     db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+    app: AppHandle,
 ) -> Result<Vec<queries::TaskItem>, String> {
     let conn = db.lock().map_err(|e| e.to_string())?;
-    queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())
+    let tasks = queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())?;
+    if completed {
+        let snap = timer.get_snapshot();
+        if snap.current_task == name {
+            timer.set_task("General".to_string());
+            app.emit("timer:task-changed", &timer.get_snapshot()).ok();
+        }
+    }
+    Ok(tasks)
 }
 
 /// Soft-deletes a task into the deleted section.
@@ -446,10 +464,12 @@ pub fn tasks_delete(
     name: String,
     db: State<'_, DbState>,
     timer: State<'_, TimerController>,
+    app: AppHandle,
 ) -> Result<Vec<queries::TaskItem>, String> {
     let snap = timer.get_snapshot();
     if snap.current_task == name {
         timer.set_task("General".to_string());
+        app.emit("timer:task-changed", &timer.get_snapshot()).ok();
     }
     let conn = db.lock().map_err(|e| e.to_string())?;
     queries::delete_task(&conn, &name).map_err(|e| e.to_string())

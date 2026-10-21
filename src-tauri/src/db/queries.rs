@@ -234,13 +234,14 @@ pub fn get_daily_stats_by_date(conn: &Connection, target_date: &str) -> Result<D
     })
 }
 
+/// Returns the current local calendar date (YYYY-MM-DD).
+pub fn get_local_today_date(conn: &Connection) -> Result<String> {
+    conn.query_row("SELECT date('now', 'localtime')", [], |r| r.get(0))
+}
+
 /// Work rounds (including fractions) and focus time for today (local calendar date).
 pub fn get_daily_stats(conn: &Connection) -> Result<DailyStats> {
-    let today: String = conn.query_row(
-        "SELECT date('now', 'localtime')",
-        [],
-        |r| r.get(0),
-    )?;
+    let today = get_local_today_date(conn)?;
     get_daily_stats_by_date(conn, &today)
 }
 

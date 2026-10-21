@@ -271,7 +271,100 @@ fn listen_events(
     let mut current_session_id: Option<i64> = None;
     const MIN_RECORD_SECS: u32 = 120;
 
-    while let Ok(event) = event_rx.recv() {
+    let mut last_date = if let Ok(conn) = db.lock() {
+        queries::get_local_today_date(&conn).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    loop {
+        let event = match event_rx.recv_timeout(Duration::from_millis(500)) {
+            Ok(e) => Some(e),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+
+        // --- Day rollover detection (Midnight transition or System Wake) ---
+        let current_date = if let Ok(conn) = db.lock() {
+            queries::get_local_today_date(&conn).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        if !current_date.is_empty() && !last_date.is_empty() && current_date != last_date {
+            log::info!("[timer] Day changed from {last_date} to {current_date}");
+            let is_running = shared.lock().unwrap().is_running;
+
+            if !is_running {
+                // Timer was paused or idle overnight
+                let elapsed = shared.lock().unwrap().elapsed_secs;
+                let is_continuous = settings.lock().unwrap().timer_mode == "continuous";
+                if let Some(session_id) = current_session_id.take() {
+                    if let Ok(conn) = db.lock() {
+                        let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
+                    }
+                } else if elapsed >= MIN_RECORD_SECS {
+                    let task = current_task.lock().unwrap().clone();
+                    let total = {
+                        let seq = sequence.lock().unwrap();
+                        let s = settings.lock().unwrap();
+                        seq.current_duration_secs(&s)
+                    };
+                    if let Ok(conn) = db.lock() {
+                        if let Ok(id) = queries::insert_session(&conn, "work", elapsed, total, &task) {
+                            let _ = queries::complete_session(&conn, id, elapsed, is_continuous);
+                        }
+                    }
+                }
+                current_session_id = None;
+
+                // Reset timer engine and state to original values
+                engine.send(TimerCommand::Reset);
+                {
+                    let mut s = shared.lock().unwrap();
+                    s.elapsed_secs = 0;
+                    s.is_running = false;
+                }
+                sequence.lock().unwrap().reset();
+
+                let duration = {
+                    let seq = sequence.lock().unwrap();
+                    let s = settings.lock().unwrap();
+                    seq.current_duration_secs(&s)
+                };
+                engine.send(TimerCommand::Prime { duration_secs: duration });
+
+                // Reset tray icon to idle
+                let rt = sequence.lock().unwrap().current_round.as_str().to_string();
+                tray::update_icon(&tray, &rt, false, 0.0);
+                last_tray_progress = -1.0;
+                tray::update_menu_items(&tray, false, false);
+
+                // Broadcast reset snapshot with today_focus_secs = 0
+                let snapshot = build_snapshot(&sequence, &settings, &shared, &db, &current_task);
+                let _ = app.emit("timer:reset", &snapshot);
+                let _ = app.emit("timer:day-changed", &snapshot);
+                if let Some(ws) = app.try_state::<Arc<WsState>>() {
+                    websocket::broadcast_reset(&ws);
+                    websocket::broadcast_round_change(&ws, snapshot);
+                }
+            } else {
+                // Timer is actively running across midnight: do not interrupt countdown,
+                // but broadcast day-changed so "Today" focus time counter restarts from 0.
+                let snapshot = build_snapshot(&sequence, &settings, &shared, &db, &current_task);
+                let _ = app.emit("timer:day-changed", &snapshot);
+                if let Some(ws) = app.try_state::<Arc<WsState>>() {
+                    websocket::broadcast_round_change(&ws, snapshot);
+                }
+            }
+
+            last_date = current_date;
+        }
+
+        let Some(event) = event else {
+            continue;
+        };
+
         match event {
             TimerEvent::Started { total_secs } => {
                 log::info!("[timer] started total={total_secs}s");

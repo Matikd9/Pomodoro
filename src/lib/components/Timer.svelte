@@ -13,6 +13,8 @@
     onTimerResumed,
     onRoundChange,
     onTimerReset,
+    onTaskChanged,
+    onDayChanged,
     setSetting,
     telegramSend,
     checkRemoteTelegramSupport,
@@ -142,6 +144,14 @@
           setSetting('timer_mode', savedMode).catch(() => {});
         }
       }
+      const todayStr = new Date().toLocaleDateString('en-CA');
+      const savedDate = localStorage.getItem('pomotroid_last_date');
+      if (savedDate && savedDate !== todayStr) {
+        continuousBaseSecs = 0;
+        localStorage.removeItem('pomotroid_continuous_base');
+      }
+      localStorage.setItem('pomotroid_last_date', todayStr);
+
       const savedBase = localStorage.getItem('pomotroid_continuous_base');
       if (savedBase) {
         continuousBaseSecs = parseInt(savedBase, 10) || 0;
@@ -156,6 +166,28 @@
       };
       window.addEventListener('storage', onStorage);
       cleanups.push(() => window.removeEventListener('storage', onStorage));
+
+      const checkDateRollover = async () => {
+        const nowStr = new Date().toLocaleDateString('en-CA');
+        const prev = localStorage.getItem('pomotroid_last_date');
+        if (prev && prev !== nowStr) {
+          continuousBaseSecs = 0;
+          localStorage.removeItem('pomotroid_continuous_base');
+          localStorage.setItem('pomotroid_last_date', nowStr);
+          try {
+            const latest = await getTimerState();
+            timerState.set(latest);
+          } catch {}
+        }
+      };
+      window.addEventListener('focus', checkDateRollover);
+      cleanups.push(() => window.removeEventListener('focus', checkDateRollover));
+
+      const onVisibility = () => {
+        if (document.visibilityState === 'visible') checkDateRollover();
+      };
+      document.addEventListener('visibilitychange', onVisibility);
+      cleanups.push(() => document.removeEventListener('visibilitychange', onVisibility));
     }
 
     // Async setup: hydrate state and register event listeners.
@@ -236,6 +268,17 @@
           continuousBaseSecs = 0;
           if (typeof window !== 'undefined') {
             localStorage.removeItem('pomotroid_continuous_base');
+          }
+        }),
+        await onTaskChanged((taskSnap) => {
+          timerState.set(taskSnap);
+        }),
+        await onDayChanged((daySnap) => {
+          timerState.set(daySnap);
+          continuousBaseSecs = 0;
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('pomotroid_continuous_base');
+            localStorage.setItem('pomotroid_last_date', new Date().toLocaleDateString('en-CA'));
           }
         })
       );
