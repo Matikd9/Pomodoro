@@ -42,6 +42,7 @@ pub struct TimerSnapshot {
     pub today_focus_secs: u32,
     /// Currently selected task/subject (e.g. "General", "Math").
     pub current_task: String,
+    pub timer_mode: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -151,9 +152,15 @@ impl TimerController {
             self.engine.send(TimerCommand::Pause);
         } else if s.elapsed_secs > 0 {
             log::info!("[timer] resume");
+            let mode = self.settings.lock().unwrap().timer_mode.clone();
+            if mode == "continuous" {
+                self.engine.send(TimerCommand::Prime { duration_secs: 0 });
+            }
             self.engine.send(TimerCommand::Resume);
         } else {
             log::info!("[timer] start");
+            let dur = self.sequence.lock().unwrap().current_duration_secs(&self.settings.lock().unwrap());
+            self.engine.send(TimerCommand::Prime { duration_secs: dur });
             self.engine.send(TimerCommand::Start);
         }
     }
@@ -235,12 +242,17 @@ impl TimerController {
         // Sync work_rounds_total so the round counter and advance() logic both
         // reflect the new long_break_interval immediately.
         self.sequence.lock().unwrap().work_rounds_total = new.long_break_interval;
-        *self.settings.lock().unwrap() = new;
-        let s = self.shared.lock().unwrap();
-        let is_idle = !s.is_running && s.elapsed_secs == 0;
-        drop(s);
-        if is_idle {
-            self.reconfigure();
+        *self.settings.lock().unwrap() = new.clone();
+        if new.timer_mode == "continuous" {
+            // In continuous mode, duration must ALWAYS be 0
+            self.engine.send(TimerCommand::Prime { duration_secs: 0 });
+        } else {
+            let s = self.shared.lock().unwrap();
+            let is_idle = !s.is_running && s.elapsed_secs == 0;
+            drop(s);
+            if is_idle {
+                self.reconfigure();
+            }
         }
     }
 }
@@ -434,6 +446,13 @@ fn listen_events(
             }
 
             TimerEvent::Complete { skipped: was_skipped } => {
+                let is_continuous = settings.lock().unwrap().timer_mode == "continuous";
+                if is_continuous && !was_skipped {
+                    log::warn!("[timer] Ignored spurious Complete event in continuous mode; continuing timer");
+                    engine.send(TimerCommand::Prime { duration_secs: 0 });
+                    continue;
+                }
+
                 let completed_round = sequence.lock().unwrap().current_round;
                 log::info!(
                     "[timer] round complete type={} skipped={was_skipped}",
@@ -712,5 +731,6 @@ fn build_snapshot(
         session_work_count: seq.session_work_count,
         today_focus_secs,
         current_task: task,
+        timer_mode: s.timer_mode.clone(),
     }
 }

@@ -28,6 +28,13 @@
   import type { TimerMode } from '$lib/types';
 
   let currentMode = $state<TimerMode>('pomodoro');
+  let snap = $derived($timerState);
+
+  $effect(() => {
+    if (snap.timer_mode && (snap.timer_mode === 'continuous' || snap.timer_mode === 'pomodoro')) {
+      currentMode = snap.timer_mode as TimerMode;
+    }
+  });
 
   async function saveMiniPosition() {
     if (!isTauri) return;

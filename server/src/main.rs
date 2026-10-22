@@ -70,6 +70,7 @@ pub struct TimerSnapshot {
     pub session_work_count: u32,
     pub today_focus_secs: u32,
     pub current_task: String,
+    pub timer_mode: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -149,6 +150,7 @@ impl ServerController {
             session_work_count: seq.session_work_count,
             today_focus_secs,
             current_task: task,
+            timer_mode: s.timer_mode.clone(),
         }
     }
 
@@ -157,8 +159,14 @@ impl ServerController {
         if s.is_running {
             self.engine.send(TimerCommand::Pause);
         } else if s.elapsed_secs > 0 {
+            let mode = self.settings.lock().unwrap().timer_mode.clone();
+            if mode == "continuous" {
+                self.engine.send(TimerCommand::Prime { duration_secs: 0 });
+            }
             self.engine.send(TimerCommand::Resume);
         } else {
+            let dur = self.sequence.lock().unwrap().current_duration_secs(&self.settings.lock().unwrap());
+            self.engine.send(TimerCommand::Prime { duration_secs: dur });
             self.engine.send(TimerCommand::Start);
         }
         drop(s);
@@ -389,6 +397,13 @@ async fn main() {
                             }
                         }
                         TimerEvent::Complete { skipped } => {
+                            let is_continuous = settings_thread.lock().unwrap().timer_mode == "continuous";
+                            if is_continuous && !skipped {
+                                log::warn!("[server] Ignored spurious Complete event in continuous mode; continuing timer");
+                                engine_thread.send(TimerCommand::Prime { duration_secs: 0 });
+                                continue;
+                            }
+
                             let completed_round = seq_thread.lock().unwrap().current_round;
                             if completed_round == RoundType::Work {
                                 let total = {
@@ -634,6 +649,7 @@ fn build_snapshot_raw(
         session_work_count: s_seq.session_work_count,
         today_focus_secs,
         current_task: s_task,
+        timer_mode: s_sett.timer_mode.clone(),
     }
 }
 
@@ -933,7 +949,11 @@ async fn api_presets_select(
     *ctl.settings.lock().unwrap() = updated.clone();
     ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
     let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
-    ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    if updated.timer_mode == "continuous" {
+        ctl.engine.send(TimerCommand::Prime { duration_secs: 0 });
+    } else {
+        ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    }
 
     let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });
     let snap = ctl.get_snapshot();
@@ -1060,11 +1080,15 @@ async fn api_settings_set(
     ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
 
     let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
-    let s = ctl.shared.lock().unwrap();
-    let is_idle = !s.is_running && s.elapsed_secs == 0;
-    drop(s);
-    if is_idle {
-        ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    if updated.timer_mode == "continuous" {
+        ctl.engine.send(TimerCommand::Prime { duration_secs: 0 });
+    } else {
+        let s = ctl.shared.lock().unwrap();
+        let is_idle = !s.is_running && s.elapsed_secs == 0;
+        drop(s);
+        if is_idle {
+            ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+        }
     }
 
     let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });
@@ -1086,11 +1110,15 @@ async fn api_settings_reset(
     ctl.sequence.lock().unwrap().work_rounds_total = updated.long_break_interval;
 
     let dur = ctl.sequence.lock().unwrap().current_duration_secs(&updated);
-    let s = ctl.shared.lock().unwrap();
-    let is_idle = !s.is_running && s.elapsed_secs == 0;
-    drop(s);
-    if is_idle {
-        ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+    if updated.timer_mode == "continuous" {
+        ctl.engine.send(TimerCommand::Prime { duration_secs: 0 });
+    } else {
+        let s = ctl.shared.lock().unwrap();
+        let is_idle = !s.is_running && s.elapsed_secs == 0;
+        drop(s);
+        if is_idle {
+            ctl.engine.send(TimerCommand::Reconfigure { duration_secs: dur });
+        }
     }
 
     let _ = ctl.broadcast_tx.send(WsEvent::SettingsChanged { payload: updated.clone() });

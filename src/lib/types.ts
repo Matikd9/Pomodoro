@@ -17,6 +17,7 @@ export interface TimerState {
   session_work_count: number; // monotonic focus round count since last reset
   today_focus_secs: number; // focus seconds accumulated today
   current_task: string; // active task name (e.g. "General", "Math")
+  timer_mode: TimerMode;
 }
 
 /** Mirrors Rust `Settings` struct returned by `settings_get`. */

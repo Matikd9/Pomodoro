@@ -272,6 +272,7 @@ mod tests {
             session_work_count: 1,
             today_focus_secs: 60,
             current_task: "General".into(),
+            timer_mode: "pomodoro".into(),
         }
     }
 

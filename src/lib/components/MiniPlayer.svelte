@@ -19,7 +19,7 @@
 
   // In continuous mode: count up (stopwatch).
   // In pomodoro mode: count down (timer).
-  const isContinuous = $derived(mode === 'continuous' || snap.total_secs === 0);
+  const isContinuous = $derived(mode === 'continuous' || snap.timer_mode === 'continuous' || snap.total_secs === 0);
 
   // Remaining time in pomodoro mode, elapsed in continuous mode
   const displaySecs = $derived.by(() => {

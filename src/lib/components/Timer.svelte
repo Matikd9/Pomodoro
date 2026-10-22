@@ -48,6 +48,17 @@
 
   let snap = $derived($timerState);
 
+  $effect(() => {
+    if (snap.timer_mode && (snap.timer_mode === 'continuous' || snap.timer_mode === 'pomodoro')) {
+      if (timerMode !== snap.timer_mode) {
+        timerMode = snap.timer_mode;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('pomotroid_timer_mode', snap.timer_mode);
+        }
+      }
+    }
+  });
+
   const currentContinuousElapsed = $derived(continuousBaseSecs + snap.elapsed_secs);
 
   const currentTotalTodaySecs = $derived(
@@ -111,6 +122,8 @@
     try {
       const updated = await setSetting('timer_mode', newMode);
       settings.set(updated);
+      const latest = await getTimerState();
+      timerState.set(latest);
     } catch (err) {
       console.warn('Failed to save timer_mode to settings:', err);
     }
@@ -140,9 +153,13 @@
       const savedMode = localStorage.getItem('pomotroid_timer_mode');
       if (savedMode === 'continuous' || savedMode === 'pomodoro') {
         timerMode = savedMode;
-        if ($settings.timer_mode !== savedMode) {
-          setSetting('timer_mode', savedMode).catch(() => {});
-        }
+        setSetting('timer_mode', savedMode)
+          .then(async (updated) => {
+            settings.set(updated);
+            const latest = await getTimerState();
+            timerState.set(latest);
+          })
+          .catch(() => {});
       }
       const todayStr = new Date().toLocaleDateString('en-CA');
       const savedDate = localStorage.getItem('pomotroid_last_date');

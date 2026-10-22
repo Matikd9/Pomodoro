@@ -16,6 +16,7 @@ const initial: TimerState = {
   session_work_count: 1,
   today_focus_secs: 0,
   current_task: 'General',
+  timer_mode: 'pomodoro',
 };
 
 export const timerState = writable<TimerState>(initial);
