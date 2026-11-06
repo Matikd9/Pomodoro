@@ -146,11 +146,15 @@ impl TimerController {
 
     /// Toggle: start a fresh timer if idle, resume if paused, pause if running.
     pub fn toggle(&self) {
-        let s = self.shared.lock().unwrap();
-        if s.is_running {
+        let (is_running, elapsed_secs) = {
+            let s = self.shared.lock().unwrap();
+            (s.is_running, s.elapsed_secs)
+        };
+
+        if is_running {
             log::info!("[timer] pause");
             self.engine.send(TimerCommand::Pause);
-        } else if s.elapsed_secs > 0 {
+        } else if elapsed_secs > 0 {
             log::info!("[timer] resume");
             let mode = self.settings.lock().unwrap().timer_mode.clone();
             if mode == "continuous" {

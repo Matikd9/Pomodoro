@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::{
@@ -127,16 +127,16 @@ pub struct ServerController {
 
 impl ServerController {
     pub fn get_snapshot(&self) -> TimerSnapshot {
-        let seq = self.sequence.lock().unwrap();
-        let s = self.settings.lock().unwrap();
-        let sh = self.shared.lock().unwrap();
-        let task = self.current_task.lock().unwrap().clone();
-
         let today_focus_secs = if let Ok(conn) = self.db.lock() {
             queries::get_today_focus_secs(&conn).unwrap_or(0)
         } else {
             0
         };
+
+        let seq = self.sequence.lock().unwrap();
+        let s = self.settings.lock().unwrap();
+        let sh = self.shared.lock().unwrap();
+        let task = self.current_task.lock().unwrap().clone();
 
         TimerSnapshot {
             round_type: seq.current_round.as_str().to_string(),
@@ -155,10 +155,14 @@ impl ServerController {
     }
 
     pub fn toggle(&self) -> TimerSnapshot {
-        let s = self.shared.lock().unwrap();
-        if s.is_running {
+        let (is_running, elapsed_secs) = {
+            let s = self.shared.lock().unwrap();
+            (s.is_running, s.elapsed_secs)
+        };
+
+        if is_running {
             self.engine.send(TimerCommand::Pause);
-        } else if s.elapsed_secs > 0 {
+        } else if elapsed_secs > 0 {
             let mode = self.settings.lock().unwrap().timer_mode.clone();
             if mode == "continuous" {
                 self.engine.send(TimerCommand::Prime { duration_secs: 0 });
@@ -169,7 +173,7 @@ impl ServerController {
             self.engine.send(TimerCommand::Prime { duration_secs: dur });
             self.engine.send(TimerCommand::Start);
         }
-        drop(s);
+
         self.get_snapshot()
     }
 
@@ -229,6 +233,12 @@ async fn main() {
     log::info!("[server] Opening database at {:?}", db_path);
 
     let conn = Connection::open(&db_path).expect("Failed to open sqlite database");
+    conn.busy_timeout(Duration::from_secs(5))
+        .expect("Failed to set busy timeout");
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+    )
+    .expect("Failed to set SQLite PRAGMAs");
     migrations::run(&conn).expect("Failed to run migrations");
 
     let initial_settings = {
@@ -257,7 +267,7 @@ async fn main() {
     }));
     let db_arc = Arc::new(Mutex::new(conn));
     let current_task = Arc::new(Mutex::new(initial_task));
-    let (broadcast_tx, _) = broadcast::channel::<WsEvent>(128);
+    let (broadcast_tx, _) = broadcast::channel::<WsEvent>(1024);
 
     // Event listener thread
     {
@@ -280,6 +290,7 @@ async fn main() {
                 } else {
                     String::new()
                 };
+                let mut last_day_check = Instant::now();
 
                 loop {
                     let event = match event_rx.recv_timeout(Duration::from_millis(500)) {
@@ -289,67 +300,72 @@ async fn main() {
                     };
 
                     // --- Day rollover detection (Midnight transition or System Wake) ---
-                    let current_date = if let Ok(conn) = db_thread.lock() {
-                        queries::get_local_today_date(&conn).unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
+                    if last_day_check.elapsed() >= Duration::from_secs(30) {
+                        last_day_check = Instant::now();
+                        let current_date = if let Ok(conn) = db_thread.lock() {
+                            queries::get_local_today_date(&conn).unwrap_or_default()
+                        } else {
+                            String::new()
+                        };
 
-                    if !current_date.is_empty() && !last_date.is_empty() && current_date != last_date {
-                        log::info!("[server] Day changed from {last_date} to {current_date}");
-                        let is_running = shared_thread.lock().unwrap().is_running;
+                        if !current_date.is_empty() && !last_date.is_empty() && current_date != last_date {
+                            log::info!("[server] Day changed from {last_date} to {current_date}");
+                            let is_running = shared_thread.lock().unwrap().is_running;
 
-                        if !is_running {
-                            // Timer was paused or idle overnight
-                            let elapsed = shared_thread.lock().unwrap().elapsed_secs;
-                            let is_continuous = settings_thread.lock().unwrap().timer_mode == "continuous";
-                            if let Some(session_id) = current_session_id.take() {
-                                if let Ok(conn) = db_thread.lock() {
-                                    let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
+                            if !is_running {
+                                // Timer was paused or idle overnight
+                                let elapsed = shared_thread.lock().unwrap().elapsed_secs;
+                                let is_continuous = settings_thread.lock().unwrap().timer_mode == "continuous";
+                                if let Some(session_id) = current_session_id.take() {
+                                    if let Ok(conn) = db_thread.lock() {
+                                        let _ = queries::complete_session(&conn, session_id, elapsed, is_continuous);
+                                    }
+                                } else if elapsed >= MIN_RECORD_SECS {
+                                    let task = task_thread.lock().unwrap().clone();
+                                    let total = {
+                                        let seq = seq_thread.lock().unwrap();
+                                        let s = settings_thread.lock().unwrap();
+                                        seq.current_duration_secs(&s)
+                                    };
+                                    if let Ok(conn) = db_thread.lock() {
+                                        if let Ok(id) = queries::insert_session(&conn, "work", elapsed, total, &task) {
+                                            let _ = queries::complete_session(&conn, id, elapsed, is_continuous);
+                                        }
+                                    }
                                 }
-                            } else if elapsed >= MIN_RECORD_SECS {
-                                let task = task_thread.lock().unwrap().clone();
-                                let total = {
+                                current_session_id = None;
+
+                                // Reset timer engine and state
+                                engine_thread.send(TimerCommand::Reset);
+                                {
+                                    let mut s = shared_thread.lock().unwrap();
+                                    s.elapsed_secs = 0;
+                                    s.is_running = false;
+                                }
+                                seq_thread.lock().unwrap().reset();
+
+                                let duration = {
                                     let seq = seq_thread.lock().unwrap();
                                     let s = settings_thread.lock().unwrap();
                                     seq.current_duration_secs(&s)
                                 };
-                                if let Ok(conn) = db_thread.lock() {
-                                    if let Ok(id) = queries::insert_session(&conn, "work", elapsed, total, &task) {
-                                        let _ = queries::complete_session(&conn, id, elapsed, is_continuous);
-                                    }
-                                }
+                                engine_thread.send(TimerCommand::Prime { duration_secs: duration });
+
+                                let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
+                                let _ = tx.send(WsEvent::Reset { payload: snap.clone() });
+                                let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
+                                let _ = tx.send(WsEvent::DayChanged { payload: snap });
+                            } else {
+                                // Timer is running across midnight: do not interrupt, broadcast updated today focus
+                                let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
+                                let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
+                                let _ = tx.send(WsEvent::DayChanged { payload: snap });
                             }
-                            current_session_id = None;
 
-                            // Reset timer engine and state
-                            engine_thread.send(TimerCommand::Reset);
-                            {
-                                let mut s = shared_thread.lock().unwrap();
-                                s.elapsed_secs = 0;
-                                s.is_running = false;
-                            }
-                            seq_thread.lock().unwrap().reset();
-
-                            let duration = {
-                                let seq = seq_thread.lock().unwrap();
-                                let s = settings_thread.lock().unwrap();
-                                seq.current_duration_secs(&s)
-                            };
-                            engine_thread.send(TimerCommand::Prime { duration_secs: duration });
-
-                            let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
-                            let _ = tx.send(WsEvent::Reset { payload: snap.clone() });
-                            let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
-                            let _ = tx.send(WsEvent::DayChanged { payload: snap });
-                        } else {
-                            // Timer is running across midnight: do not interrupt, broadcast updated today focus
-                            let snap = build_snapshot_raw(&seq_thread, &settings_thread, &shared_thread, &db_thread, &task_thread);
-                            let _ = tx.send(WsEvent::RoundChange { payload: snap.clone() });
-                            let _ = tx.send(WsEvent::DayChanged { payload: snap });
+                            last_date = current_date;
+                        } else if last_date.is_empty() && !current_date.is_empty() {
+                            last_date = current_date;
                         }
-
-                        last_date = current_date;
                     }
 
                     let Some(event) = event else {
@@ -626,16 +642,16 @@ fn build_snapshot_raw(
     db: &Arc<Mutex<Connection>>,
     task: &Arc<Mutex<String>>,
 ) -> TimerSnapshot {
-    let s_seq = seq.lock().unwrap();
-    let s_sett = settings.lock().unwrap();
-    let s_sh = shared.lock().unwrap();
-    let s_task = task.lock().unwrap().clone();
-
     let today_focus_secs = if let Ok(conn) = db.lock() {
         queries::get_today_focus_secs(&conn).unwrap_or(0)
     } else {
         0
     };
+
+    let s_seq = seq.lock().unwrap();
+    let s_sett = settings.lock().unwrap();
+    let s_sh = shared.lock().unwrap();
+    let s_task = task.lock().unwrap().clone();
 
     TimerSnapshot {
         round_type: s_seq.current_round.as_str().to_string(),
@@ -1241,7 +1257,14 @@ async fn handle_socket(socket: WebSocket, ctl: Arc<ServerController>) {
         loop {
             tokio::select! {
                 result = rx.recv() => {
-                    let Ok(event) = result else { break };
+                    let event = match result {
+                        Ok(event) => event,
+                        Err(broadcast::error::RecvError::Lagged(missed)) => {
+                            log::warn!("[server] WebSocket client lagged, missed {missed} broadcast messages");
+                            continue;
+                        }
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    };
                     let Ok(json) = serde_json::to_string(&event) else { continue };
                     if sender.send(Message::Text(json.into())).await.is_err() { break }
                 }

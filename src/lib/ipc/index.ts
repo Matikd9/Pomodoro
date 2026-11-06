@@ -61,9 +61,11 @@ export function isRemoteMode(): boolean {
 // --- Remote HTTP Fetch Helper ---
 
 async function remoteFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const base = getRemoteServerUrl() ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  const base =
+    getRemoteServerUrl() ?? (typeof window !== 'undefined' ? window.location.origin : '');
   const res = await fetch(`${base}${path}`, {
     ...options,
+    signal: options?.signal ?? AbortSignal.timeout(8000),
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
@@ -125,6 +127,10 @@ function ensureWebSocket() {
     const url = getWsUrl();
     activeWs = new WebSocket(url);
 
+    activeWs.onopen = () => {
+      activeWs?.send(JSON.stringify({ type: 'getState' }));
+    };
+
     activeWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -132,6 +138,7 @@ function ensureWebSocket() {
         if (type === 'tick') emitWs('timer:tick', payload);
         else if (type === 'paused') emitWs('timer:paused', payload);
         else if (type === 'resumed') emitWs('timer:resumed', payload);
+        else if (type === 'state') emitWs('timer:round-change', payload);
         else if (type === 'roundChange') {
           emitWs('timer:round-change', payload);
           playWebSound(payload.round_type);
@@ -403,7 +410,8 @@ export const tasksGetSummary = async (): Promise<TaskStatsSummary[]> => {
         if (!weekObj || !Array.isArray(weekObj.tasks)) return;
         const isThisWeek = index === 0;
         const isThisMonth =
-          (typeof weekObj.start_date === 'string' && weekObj.start_date.startsWith(currentYearMonth)) ||
+          (typeof weekObj.start_date === 'string' &&
+            weekObj.start_date.startsWith(currentYearMonth)) ||
           (typeof weekObj.end_date === 'string' && weekObj.end_date.startsWith(currentYearMonth));
 
         for (const t of weekObj.tasks) {
@@ -504,7 +512,10 @@ export const tasksCreate = async (name: string): Promise<TaskItem[]> => {
   return (Array.isArray(raw) ? raw : []).map(normalizeTask);
 };
 
-export const tasksRename = async (oldName: string, newName: string): Promise<TaskStatsSummary[]> => {
+export const tasksRename = async (
+  oldName: string,
+  newName: string
+): Promise<TaskStatsSummary[]> => {
   if (isRemoteMode()) {
     try {
       const res = await remoteFetch<unknown[]>('/api/tasks/rename', {
@@ -536,7 +547,10 @@ export const tasksRestore = async (name: string): Promise<TaskStatsSummary[]> =>
       });
       return (Array.isArray(res) ? res : []).map(normalizeTaskStatsSummary);
     } catch (e) {
-      console.warn('Remote /api/tasks/restore failed or not supported yet, falling back to create:', e);
+      console.warn(
+        'Remote /api/tasks/restore failed or not supported yet, falling back to create:',
+        e
+      );
       try {
         await tasksCreate(name);
       } catch (fallbackErr) {
@@ -549,7 +563,10 @@ export const tasksRestore = async (name: string): Promise<TaskStatsSummary[]> =>
   return (Array.isArray(raw) ? raw : []).map(normalizeTaskStatsSummary);
 };
 
-export const tasksToggleComplete = async (name: string, completed: boolean): Promise<TaskItem[]> => {
+export const tasksToggleComplete = async (
+  name: string,
+  completed: boolean
+): Promise<TaskItem[]> => {
   if (isRemoteMode()) {
     try {
       const raw = await remoteFetch<unknown[]>('/api/tasks/complete', {
@@ -633,7 +650,16 @@ export const presetsList = async (): Promise<PresetItem[]> => {
   }
   const list = (Array.isArray(raw) ? raw : []).map(normalizePreset);
   if (list.length === 0) {
-    return [{ id: 1, name: 'Default', work_secs: 1500, short_break_secs: 300, long_break_secs: 900, rounds: 4 }];
+    return [
+      {
+        id: 1,
+        name: 'Default',
+        work_secs: 1500,
+        short_break_secs: 300,
+        long_break_secs: 900,
+        rounds: 4,
+      },
+    ];
   }
   return list;
 };
@@ -1010,7 +1036,11 @@ export const telegramTest = async (botToken: string, chatId: string): Promise<st
   return invoke<string>('telegram_test', { botToken, chatId });
 };
 
-export const telegramSend = async (botToken: string, chatId: string, message: string): Promise<void> => {
+export const telegramSend = async (
+  botToken: string,
+  chatId: string,
+  message: string
+): Promise<void> => {
   if (!botToken.trim() || !chatId.trim() || !message.trim()) return;
   if (isRemoteMode()) {
     try {
