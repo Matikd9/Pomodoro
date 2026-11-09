@@ -7,6 +7,12 @@ import type { Theme } from '$lib/types';
  *  Theme keys already include the `--` prefix (e.g. "--color-background"). */
 export function applyTheme(theme: Theme): void {
   const root = document.documentElement;
+
+  // Clear optional properties like background gradient if the incoming theme does not specify one.
+  if (!theme.colors['--color-background-gradient']) {
+    root.style.removeProperty('--color-background-gradient');
+  }
+
   for (const [key, value] of Object.entries(theme.colors)) {
     root.style.setProperty(key, value);
   }

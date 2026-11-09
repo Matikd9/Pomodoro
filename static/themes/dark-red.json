@@ -1,0 +1,16 @@
+{
+  "name": "Dark Red",
+  "colors": {
+    "--color-long-round": "#0080ff",
+    "--color-short-round": "#00ff66",
+    "--color-focus-round": "#ff003b",
+    "--color-background": "#000000",
+    "--color-background-light": "#0e0e10",
+    "--color-background-lightest": "#26262a",
+    "--color-foreground": "#ffffff",
+    "--color-foreground-darker": "#9ba1a6",
+    "--color-foreground-darkest": "#555a64",
+    "--color-accent": "#ff003b",
+    "--color-background-gradient": "radial-gradient(ellipse 80% 40% at 50% 0%, rgba(220, 20, 40, 0.22) 0%, rgba(120, 10, 20, 0.08) 50%, transparent 100%)"
+  }
+}

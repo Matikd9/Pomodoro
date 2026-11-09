@@ -17,7 +17,7 @@ pub const DEFAULTS: &[(&str, &str)] = &[
     ("dial_countdown", "true"),
     ("theme_mode", "auto"),
     ("theme_light", "Pomotroid Light"),
-    ("theme_dark", "Pomotroid"),
+    ("theme_dark", "Dark Red"),
     ("tick_sounds_work", "false"),
     ("tick_sounds_break", "false"),
     ("time_work_secs", "1500"),

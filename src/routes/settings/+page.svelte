@@ -191,7 +191,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--color-background);
+    background: transparent;
     animation: app-fade-in 0.2s ease both;
   }
 

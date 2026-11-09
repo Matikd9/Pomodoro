@@ -41,7 +41,7 @@ export function getRemoteServerUrl(): string | null {
 export function setRemoteServerUrl(url: string | null): void {
   if (typeof window === 'undefined') return;
   if (!url || !url.trim()) {
-    localStorage.removeItem(REMOTE_URL_KEY);
+    localStorage.setItem(REMOTE_URL_KEY, '');
   } else {
     localStorage.setItem(REMOTE_URL_KEY, url.trim().replace(/\/+$/, ''));
   }
@@ -846,7 +846,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     dial_countdown: Boolean(s.dial_countdown ?? true),
     theme_mode: s.theme_mode ?? 'auto',
     theme_light: s.theme_light ?? 'Pomotroid Light',
-    theme_dark: s.theme_dark ?? 'Pomotroid',
+    theme_dark: s.theme_dark ?? 'Dark Red',
     tick_sounds_during_work: Boolean(s.tick_sounds_during_work ?? false),
     tick_sounds_during_break: Boolean(s.tick_sounds_during_break ?? false),
     time_work_secs: Number(s.time_work_secs ?? 1500),
@@ -966,17 +966,69 @@ export const reloadShortcuts = async () => {
 
 // --- Theme commands ---
 
-export const getThemes = async () => {
+const BUILTIN_DARK_RED: Theme = {
+  name: 'Dark Red',
+  colors: {
+    '--color-long-round': '#0080ff',
+    '--color-short-round': '#00ff66',
+    '--color-focus-round': '#ff003b',
+    '--color-background': '#000000',
+    '--color-background-light': '#0e0e10',
+    '--color-background-lightest': '#26262a',
+    '--color-foreground': '#ffffff',
+    '--color-foreground-darker': '#9ba1a6',
+    '--color-foreground-darkest': '#555a64',
+    '--color-accent': '#ff003b',
+    '--color-background-gradient':
+      'radial-gradient(ellipse 80% 40% at 50% 0%, rgba(220, 20, 40, 0.22) 0%, rgba(120, 10, 20, 0.08) 50%, transparent 100%)',
+  },
+  is_custom: false,
+};
+
+export const getThemes = async (): Promise<Theme[]> => {
+  let localThemes: Theme[] = [];
+  if (isTauri) {
+    try {
+      localThemes = await invoke<Theme[]>('themes_list');
+    } catch (err) {
+      console.warn('Failed to fetch local themes via Tauri invoke:', err);
+    }
+  }
+
   if (isRemoteMode()) {
     try {
-      return await remoteFetch<Theme[]>('/api/themes');
+      const remoteThemes = await remoteFetch<Theme[]>('/api/themes');
+      const map = new Map<string, Theme>();
+
+      for (const t of localThemes) {
+        map.set(t.name.toLowerCase(), t);
+      }
+      if (!map.has(BUILTIN_DARK_RED.name.toLowerCase())) {
+        map.set(BUILTIN_DARK_RED.name.toLowerCase(), BUILTIN_DARK_RED);
+      }
+      for (const t of remoteThemes) {
+        if (!map.has(t.name.toLowerCase())) {
+          map.set(t.name.toLowerCase(), t);
+        }
+      }
+
+      return Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      );
     } catch (err) {
       console.warn('Failed to fetch themes from remote, falling back to local:', err);
+      if (localThemes.length > 0) {
+        return localThemes;
+      }
       if (isTauri) {
         return invoke<Theme[]>('themes_list');
       }
-      throw err;
+      return [BUILTIN_DARK_RED];
     }
+  }
+
+  if (localThemes.length > 0) {
+    return localThemes;
   }
   return invoke<Theme[]>('themes_list');
 };
@@ -1273,10 +1325,34 @@ export const onSettingsChanged = (cb: (settings: Settings) => void): Promise<Unl
 };
 
 export const onThemesChanged = (cb: (themes: Theme[]) => void): Promise<UnlistenFn> => {
+  if (isTauri) {
+    const unlistens: UnlistenFn[] = [];
+    if (isRemoteMode()) {
+      unlistens.push(
+        addWsListener('themes:changed', async () => {
+          try {
+            const all = await getThemes();
+            cb(all);
+          } catch {}
+        })
+      );
+    }
+    return listen<Theme[]>('themes:changed', async () => {
+      try {
+        const all = await getThemes();
+        cb(all);
+      } catch {}
+    }).then((tUnlisten) => {
+      unlistens.push(tUnlisten);
+      return () => {
+        for (const u of unlistens) u();
+      };
+    });
+  }
   if (isRemoteMode()) {
     return Promise.resolve(addWsListener('themes:changed', cb));
   }
-  return listen<Theme[]>('themes:changed', (e) => cb(e.payload));
+  return Promise.resolve(() => {});
 };
 
 export const onSessionsCleared = (cb: () => void): Promise<UnlistenFn> => {

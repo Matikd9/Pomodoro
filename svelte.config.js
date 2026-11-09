@@ -18,6 +18,9 @@ const config = {
     alias: {
       $paraglide: './src/paraglide',
     },
+    version: {
+      name: '1.7.1',
+    },
   },
 };
 

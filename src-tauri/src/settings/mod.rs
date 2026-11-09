@@ -93,7 +93,7 @@ impl Default for Settings {
             dial_countdown: true,
             theme_mode: "auto".to_string(),
             theme_light: "Pomotroid Light".to_string(),
-            theme_dark: "Pomotroid".to_string(),
+            theme_dark: "Dark Red".to_string(),
             tick_sounds_during_work: false,
             tick_sounds_during_break: false,
             time_work_secs: 25 * 60,
@@ -359,7 +359,7 @@ mod tests {
         assert_eq!(s.websocket_port, 1314);
         assert_eq!(s.theme_mode, "auto");
         assert_eq!(s.theme_light, "Pomotroid Light");
-        assert_eq!(s.theme_dark, "Pomotroid");
+        assert_eq!(s.theme_dark, "Dark Red");
         assert_eq!(s.language, "auto");
         assert!(!s.verbose_logging);
     }

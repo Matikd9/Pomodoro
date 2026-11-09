@@ -205,7 +205,7 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: var(--color-background);
+    background: transparent;
     color: var(--color-foreground);
     animation: app-fade-in 0.18s ease;
     overflow: hidden;
