@@ -788,9 +788,13 @@ async fn api_tasks_complete(
     State(ctl): State<Arc<ServerController>>,
     Json(req): Json<ToggleTaskReq>,
 ) -> Result<Json<Vec<queries::TaskItem>>, StatusCode> {
-    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let tasks = queries::toggle_task_complete(&conn, &req.name, req.completed)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Release the DB lock before broadcast_task(): get_snapshot() locks the DB again,
+    // and std::sync::Mutex is not reentrant (holding it here deadlocked the whole server).
+    let tasks = {
+        let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        queries::toggle_task_complete(&conn, &req.name, req.completed)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    };
     if req.completed {
         let changed = {
             let mut cur = ctl.current_task.lock().unwrap();

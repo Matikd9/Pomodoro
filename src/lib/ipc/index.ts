@@ -45,6 +45,7 @@ export function setRemoteServerUrl(url: string | null): void {
   } else {
     localStorage.setItem(REMOTE_URL_KEY, url.trim().replace(/\/+$/, ''));
   }
+  remoteUnreachable = false;
   if (activeWs) {
     activeWs.close();
     activeWs = null;
@@ -54,8 +55,33 @@ export function setRemoteServerUrl(url: string | null): void {
   }
 }
 
+// Set when the desktop app (Tauri) could not reach the configured remote server at
+// startup. Every call then uses the local Rust backend for the rest of this window's
+// life instead of waiting on 8 s network timeouts per request.
+let remoteUnreachable = false;
+
 export function isRemoteMode(): boolean {
+  if (isTauri && remoteUnreachable) return false;
   return getRemoteServerUrl() !== null;
+}
+
+/**
+ * Probe the remote server once before the UI loads (called from +layout.ts).
+ * Only applies to the desktop app: the web build is always served by the server itself.
+ */
+export async function initRemoteMode(timeoutMs = 1500): Promise<void> {
+  if (!isTauri) return;
+  const base = getRemoteServerUrl();
+  if (!base) return;
+  try {
+    const res = await fetch(`${base}/api/state`, { signal: AbortSignal.timeout(timeoutMs) });
+    remoteUnreachable = !res.ok;
+  } catch {
+    remoteUnreachable = true;
+  }
+  if (remoteUnreachable) {
+    console.warn(`Remote server ${base} unreachable, using local backend for this session`);
+  }
 }
 
 // --- Remote HTTP Fetch Helper ---

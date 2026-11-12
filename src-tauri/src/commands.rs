@@ -446,8 +446,12 @@ pub fn tasks_toggle_complete(
     timer: State<'_, TimerController>,
     app: AppHandle,
 ) -> Result<Vec<queries::TaskItem>, String> {
-    let conn = db.lock().map_err(|e| e.to_string())?;
-    let tasks = queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())?;
+    // Release the DB lock before touching the timer: get_snapshot()/set_task() lock the
+    // same non-reentrant mutex, so holding it here would deadlock.
+    let tasks = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        queries::toggle_task_complete(&conn, &name, completed).map_err(|e| e.to_string())?
+    };
     if completed {
         let snap = timer.get_snapshot();
         if snap.current_task == name {
@@ -566,6 +570,8 @@ pub fn presets_create(
 }
 
 /// Updates an existing preset by ID and returns the updated presets list.
+// Each argument is a field the frontend sends by name; bundling them would change the IPC contract.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn presets_update(
     id: i64,
