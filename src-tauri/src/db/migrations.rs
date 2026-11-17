@@ -162,6 +162,13 @@ const MIGRATION_12: &str = "
     INSERT INTO schema_version VALUES (12);
 ";
 
+/// Adds `manual` to `sessions` so time entered or corrected by hand can be told apart
+/// from time recorded by the timer. Existing rows default to 0 (timer-recorded).
+const MIGRATION_13: &str = "
+    ALTER TABLE sessions ADD COLUMN manual INTEGER NOT NULL DEFAULT 0 CHECK(manual IN (0, 1));
+    INSERT INTO schema_version VALUES (13);
+";
+
 /// Apply any pending migrations. Each migration is wrapped in a transaction
 /// so a partial failure leaves the database unchanged.
 pub fn run(conn: &Connection) -> Result<()> {
@@ -239,6 +246,12 @@ pub fn run(conn: &Connection) -> Result<()> {
         log::info!("[db/migrations] MIGRATION_12 complete");
     }
 
+    if version < 13 {
+        log::info!("[db/migrations] applying MIGRATION_13: add manual flag to sessions");
+        conn.execute_batch(&format!("BEGIN; {MIGRATION_13} COMMIT;"))?;
+        log::info!("[db/migrations] MIGRATION_13 complete");
+    }
+
     Ok(())
 }
 
@@ -274,7 +287,7 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT MAX(version) FROM schema_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 12);
+        assert_eq!(v, 13);
     }
 
     #[test]

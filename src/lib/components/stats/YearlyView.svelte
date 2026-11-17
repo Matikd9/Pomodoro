@@ -198,10 +198,12 @@
   <style>
     :root {
       --heat-0: color-mix(in oklch, var(--color-foreground) 6%, var(--color-background));
-      --heat-1: #E34234;
-      --heat-2: #FF2400;
-      --heat-3: #DC143C;
-      --heat-4: #FF0000;
+      /* Ramp of the theme accent with clearly stepped lightness; a theme can
+         override each step with --color-heat-N (Dark Red does). */
+      --heat-1: var(--color-heat-1, color-mix(in oklch, var(--color-focus-round) 30%, var(--heat-0)));
+      --heat-2: var(--color-heat-2, color-mix(in oklch, var(--color-focus-round) 55%, var(--heat-0)));
+      --heat-3: var(--color-heat-3, color-mix(in oklch, var(--color-focus-round) 80%, var(--heat-0)));
+      --heat-4: var(--color-heat-4, var(--color-focus-round));
     }
   </style>
 </svelte:head>

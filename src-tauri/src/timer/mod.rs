@@ -171,7 +171,9 @@ impl TimerController {
 
     pub fn reset(&self) {
         log::info!("[timer] reset");
-        self.sequence.lock().unwrap().reset();
+        // Reset restarts the current round's clock but keeps the round counter: time
+        // already studied is saved as a session and must not cost the user progress in
+        // the cycle. Only the midnight rollover returns the sequence to round 1.
         // Send only Reset — the event listener's Reset handler will follow up
         // with Prime once the engine is confirmed Idle. Sending a duration
         // update here first would race the Reset and can leave the UI stale.
@@ -406,7 +408,9 @@ fn listen_events(
                 // --- Session recording: only for Work rounds, start at MIN_RECORD_SECS (2 mins) ---
                 let is_work = sequence.lock().unwrap().current_round == RoundType::Work;
                 if is_work {
-                    if elapsed_secs == MIN_RECORD_SECS && current_session_id.is_none() {
+                    // `>=`, not `==`: if a tick skips second 120 (load, sleep/wake) the
+                    // round must still be recorded.
+                    if elapsed_secs >= MIN_RECORD_SECS && current_session_id.is_none() {
                         let total = {
                             let seq = sequence.lock().unwrap();
                             let s = settings.lock().unwrap();

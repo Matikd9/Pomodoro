@@ -8,6 +8,7 @@
     onThemesChanged,
     onRoundChange,
     onSessionsCleared,
+    onSessionsChanged,
     statsGetDetailed,
     statsGetHeatmap,
   } from '$lib/ipc';
@@ -97,6 +98,14 @@
             if (heatmapLoaded) heatmap = await statsGetHeatmap();
           } catch (e) {
             await logError(`[stats] failed to refresh stats after session clear: ${e}`);
+          }
+        }),
+        await onSessionsChanged(async () => {
+          try {
+            detailed = await statsGetDetailed();
+            if (heatmapLoaded) heatmap = await statsGetHeatmap();
+          } catch (e) {
+            await logError(`[stats] failed to refresh stats after manual adjustment: ${e}`);
           }
         }),
         await onSettingsChanged(async (updated) => {

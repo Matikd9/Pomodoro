@@ -60,6 +60,8 @@ Migrations in `src-tauri/src/db/migrations.rs` are **append-only**: never edit a
 
 `timer/engine.rs` runs the clock on a background thread driven by `TimerCommand` messages and emits `TimerEvent`s. `TimerController` (`timer/mod.rs`) is the Tauri-managed API: it records sessions, emits events, and handles day rollover. `SequenceState` (`timer/sequence.rs`) tracks round type/count and keeps its own `work_rounds_total`, which must be resynced via `apply_settings()` when settings change. `timer_mode == "continuous"` is a count-up mode: duration stays 0 and rounds never auto-complete or reset.
 
+**Reset keeps the round counter** (user decision, 2026-11-13). Reset zeroes the current round's clock and saves the studied time as a session (≥ 120 s, `MIN_RECORD_SECS`). It does **not** call `SequenceState::reset()`, so "X | 4" never goes back to 1: studied time must not cost cycle progress. Only the midnight day rollover returns the sequence to round 1. Keep desktop (`timer/mod.rs`) and server (`server/src/main.rs`) behavior identical.
+
 ### Headless server shares backend code
 
 `server/src/main.rs` pulls in desktop modules through `#[path = "../../src-tauri/src/..."]` (migrations, queries, settings, defaults, obsidian, telegram, timer engine/sequence). It exposes `/api/*` REST routes plus a WebSocket, and serves the static frontend from `STATIC_DIR`. Those shared files must stay free of Tauri-only dependencies, and changing their signatures can break the server build even when the desktop app compiles. Run `cargo build --manifest-path server/Cargo.toml` after touching them.

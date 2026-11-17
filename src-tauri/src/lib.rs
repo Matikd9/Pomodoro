@@ -31,7 +31,7 @@ use commands::{
     notification_show,
     settings_get, settings_reset_defaults, settings_set,
     shortcuts_reload,
-    sessions_clear,
+    sessions_clear, sessions_add_manual, sessions_list_for_task, sessions_trim,
     stats_get_detailed, stats_get_heatmap,
     stats_get_daily_by_date, stats_get_weekly_by_offset,
     telegram_test, telegram_send,
@@ -429,6 +429,9 @@ pub fn run() {
             themes_list,
             // Sessions
             sessions_clear,
+            sessions_add_manual,
+            sessions_list_for_task,
+            sessions_trim,
             // Stats
             stats_get_detailed,
             stats_get_heatmap,

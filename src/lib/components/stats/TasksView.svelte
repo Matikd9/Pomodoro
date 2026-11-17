@@ -9,7 +9,9 @@
     tasksRestore,
     onRoundChange,
     onSessionsCleared,
+    onSessionsChanged,
   } from '$lib/ipc';
+  import AdjustTimeModal from './AdjustTimeModal.svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import type { TaskStatsSummary } from '$lib/types';
   import * as m from '$paraglide/messages.js';
@@ -29,6 +31,9 @@
   let editingTaskName = $state<string | null>(null);
   let editingValue = $state('');
   let isSubmittingEdit = $state(false);
+
+  // Manual time adjustment modal
+  let adjustingTask = $state<string | null>(null);
 
   function focusOnMount(node: HTMLElement) {
     node.focus();
@@ -55,6 +60,9 @@
             loadTasks();
           }),
           await onSessionsCleared(() => {
+            loadTasks();
+          }),
+          await onSessionsChanged(() => {
             loadTasks();
           })
         );
@@ -440,6 +448,17 @@
             <div class="task-actions">
               {#if selectedStatus === 'active'}
                 <!-- Active Actions -->
+                <button
+                  class="action-btn adjust-btn"
+                  onclick={() => (adjustingTask = task.name)}
+                  title={m.adjust_btn()}
+                  aria-label={m.adjust_btn()}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <polyline points="12 7 12 12 15 14" />
+                  </svg>
+                </button>
                 {#if task.name !== 'General'}
                   <button
                     class="action-btn complete-btn"
@@ -476,6 +495,17 @@
                 {/if}
               {:else if selectedStatus === 'completed'}
                 <!-- Completed Actions -->
+                <button
+                  class="action-btn adjust-btn"
+                  onclick={() => (adjustingTask = task.name)}
+                  title={m.adjust_btn()}
+                  aria-label={m.adjust_btn()}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9" />
+                    <polyline points="12 7 12 12 15 14" />
+                  </svg>
+                </button>
                 <button
                   class="action-btn restore-btn"
                   onclick={() => handleToggleComplete(task.name, false)}
@@ -533,6 +563,10 @@
     {/if}
   </div>
 </div>
+
+{#if adjustingTask}
+  <AdjustTimeModal taskName={adjustingTask} onClose={() => (adjustingTask = null)} />
+{/if}
 
 <style>
   .tasks-view {
@@ -961,6 +995,11 @@
   .edit-btn:hover {
     color: var(--color-foreground);
     background: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+  }
+
+  .adjust-btn:hover {
+    color: var(--color-focus-round);
+    background: color-mix(in oklch, var(--color-focus-round) 15%, transparent);
   }
 
   .delete-btn:hover {

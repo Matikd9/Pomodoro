@@ -348,6 +348,60 @@ pub fn sessions_clear(db: State<'_, DbState>, app: AppHandle) -> Result<(), Stri
     Ok(())
 }
 
+/// Tells every window that recorded time changed: stats views refetch and the main
+/// window takes the fresh snapshot (its `today_focus_secs`). Call with no DB guard held.
+fn emit_sessions_changed(app: &AppHandle, timer: &TimerController) {
+    app.emit("sessions:changed", timer.get_snapshot()).ok();
+}
+
+/// Records time studied without the timer as a manual work session.
+#[tauri::command]
+pub fn sessions_add_manual(
+    task_name: String,
+    started_at: i64,
+    duration_secs: u32,
+    db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+    app: AppHandle,
+) -> Result<queries::ManualAddResult, String> {
+    let result = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        let target = settings::load(&conn).map_err(|e| e.to_string())?.time_work_secs;
+        queries::add_manual_session(&conn, &task_name, started_at, duration_secs, target)?
+    };
+    emit_sessions_changed(&app, &timer);
+    Ok(result)
+}
+
+/// Lists a task's finished work sessions that started in `[from_ts, to_ts)`.
+#[tauri::command]
+pub fn sessions_list_for_task(
+    task_name: String,
+    from_ts: i64,
+    to_ts: i64,
+    db: State<'_, DbState>,
+) -> Result<Vec<queries::SessionItem>, String> {
+    let conn = db.lock().map_err(|e| e.to_string())?;
+    queries::list_task_sessions(&conn, &task_name, from_ts, to_ts).map_err(|e| e.to_string())
+}
+
+/// Removes time from a finished session (deleting it if it drops under 2 minutes).
+#[tauri::command]
+pub fn sessions_trim(
+    session_id: i64,
+    remove_secs: u32,
+    db: State<'_, DbState>,
+    timer: State<'_, TimerController>,
+    app: AppHandle,
+) -> Result<queries::TrimOutcome, String> {
+    let outcome = {
+        let conn = db.lock().map_err(|e| e.to_string())?;
+        queries::trim_session(&conn, session_id, remove_secs)?
+    };
+    emit_sessions_changed(&app, &timer);
+    Ok(outcome)
+}
+
 // CMD-05 — Stats commands
 // ---------------------------------------------------------------------------
 

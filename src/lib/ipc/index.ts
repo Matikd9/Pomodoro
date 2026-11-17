@@ -19,6 +19,9 @@ import type {
   TaskStatsSummary,
   ObsidianExportResult,
   PresetItem,
+  SessionItem,
+  ManualAddResult,
+  TrimOutcome,
 } from '$lib/types';
 
 // --- Remote Server Configuration ---
@@ -171,6 +174,7 @@ function ensureWebSocket() {
         } else if (type === 'reset') emitWs('timer:reset', payload);
         else if (type === 'settingsChanged') emitWs('settings:changed', payload);
         else if (type === 'sessionsCleared') emitWs('sessions:cleared', undefined);
+        else if (type === 'sessionsChanged') emitWs('sessions:changed', payload);
         else if (type === 'presetsChanged') emitWs('presets:changed', payload);
         else if (type === 'taskChanged') emitWs('timer:task-changed', payload);
         else if (type === 'dayChanged') emitWs('timer:day-changed', payload);
@@ -634,6 +638,55 @@ export const tasksDelete = async (name: string): Promise<TaskItem[]> => {
   return (Array.isArray(raw) ? raw : []).map(normalizeTask);
 };
 
+// --- Manual time adjustments ---
+
+/** Records time studied without the timer as a manual work session. */
+export const sessionsAddManual = (
+  taskName: string,
+  startedAt: number,
+  durationSecs: number
+): Promise<ManualAddResult> => {
+  if (isRemoteMode()) {
+    return remoteFetch<ManualAddResult>('/api/sessions/manual', {
+      method: 'POST',
+      body: JSON.stringify({
+        task_name: taskName,
+        started_at: startedAt,
+        duration_secs: durationSecs,
+      }),
+    });
+  }
+  return invoke<ManualAddResult>('sessions_add_manual', { taskName, startedAt, durationSecs });
+};
+
+/** Finished work sessions of a task that started in [fromTs, toTs) (unix seconds). */
+export const sessionsListForTask = (
+  taskName: string,
+  fromTs: number,
+  toTs: number
+): Promise<SessionItem[]> => {
+  if (isRemoteMode()) {
+    const qs = new URLSearchParams({
+      task_name: taskName,
+      from_ts: String(fromTs),
+      to_ts: String(toTs),
+    });
+    return remoteFetch<SessionItem[]>(`/api/sessions/list?${qs}`);
+  }
+  return invoke<SessionItem[]>('sessions_list_for_task', { taskName, fromTs, toTs });
+};
+
+/** Removes time from a finished session; it is deleted if it drops under 2 minutes. */
+export const sessionsTrim = (sessionId: number, removeSecs: number): Promise<TrimOutcome> => {
+  if (isRemoteMode()) {
+    return remoteFetch<TrimOutcome>('/api/sessions/trim', {
+      method: 'POST',
+      body: JSON.stringify({ session_id: sessionId, remove_secs: removeSecs }),
+    });
+  }
+  return invoke<TrimOutcome>('sessions_trim', { sessionId, removeSecs });
+};
+
 // --- Preset commands ---
 
 export function normalizePreset(item: unknown): PresetItem {
@@ -1005,6 +1058,11 @@ const BUILTIN_DARK_RED: Theme = {
     '--color-foreground-darker': '#9ba1a6',
     '--color-foreground-darkest': '#555a64',
     '--color-accent': '#ff003b',
+    // Keep in sync with static/themes/dark-red.json
+    '--color-heat-1': '#5c1a1a',
+    '--color-heat-2': '#9e2a2a',
+    '--color-heat-3': '#e0483e',
+    '--color-heat-4': '#ff8a73',
     '--color-background-gradient':
       'radial-gradient(ellipse 80% 40% at 50% 0%, rgba(220, 20, 40, 0.22) 0%, rgba(120, 10, 20, 0.08) 50%, transparent 100%)',
   },
@@ -1386,6 +1444,14 @@ export const onSessionsCleared = (cb: () => void): Promise<UnlistenFn> => {
     return Promise.resolve(addWsListener('sessions:cleared', cb));
   }
   return listen<void>('sessions:cleared', () => cb());
+};
+
+/** Recorded time was added or removed by hand; payload is a fresh timer snapshot. */
+export const onSessionsChanged = (cb: (state: TimerState) => void): Promise<UnlistenFn> => {
+  if (isRemoteMode()) {
+    return Promise.resolve(addWsListener('sessions:changed', cb));
+  }
+  return listen<TimerState>('sessions:changed', (e) => cb(e.payload));
 };
 
 export const onPresetsChanged = (cb: (presets: PresetItem[]) => void): Promise<UnlistenFn> => {

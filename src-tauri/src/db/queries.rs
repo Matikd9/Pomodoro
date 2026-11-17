@@ -73,6 +73,160 @@ pub fn discard_session(
 }
 
 // ---------------------------------------------------------------------------
+// Manual time adjustments
+// ---------------------------------------------------------------------------
+
+/// Shortest session the stats count (every stats query filters `duration_secs >= 120`).
+pub const MANUAL_MIN_SECS: u32 = 120;
+/// Longest single manual entry.
+pub const MANUAL_MAX_SECS: u32 = 12 * 60 * 60;
+
+/// A finished work session, as listed in the "remove time" view.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SessionItem {
+    pub id: i64,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub duration_secs: u32,
+    pub target_secs: u32,
+    pub completed: bool,
+    pub manual: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ManualAddResult {
+    pub id: i64,
+    /// Number of other work sessions whose time range overlaps the new one.
+    pub overlaps: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrimOutcome {
+    Trimmed,
+    Deleted,
+}
+
+/// Records time studied without the timer as a finished `manual` work session.
+/// Errors (as stable codes for the UI): `too_short`, `too_long`, `in_future`.
+pub fn add_manual_session(
+    conn: &Connection,
+    task_name: &str,
+    started_at: i64,
+    duration_secs: u32,
+    target_secs: u32,
+) -> std::result::Result<ManualAddResult, String> {
+    if duration_secs < MANUAL_MIN_SECS {
+        return Err("too_short".into());
+    }
+    if duration_secs > MANUAL_MAX_SECS {
+        return Err("too_long".into());
+    }
+    let ended_at = started_at + duration_secs as i64;
+    // Small tolerance for clock skew between the UI and the backend.
+    if ended_at > unix_now() + 60 {
+        return Err("in_future".into());
+    }
+    let task = if task_name.trim().is_empty() { "General" } else { task_name.trim() };
+    let target = if target_secs > 0 { target_secs } else { 1500 };
+
+    let overlaps: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sessions
+             WHERE round_type = 'work' AND duration_secs >= 120
+               AND started_at < ?2
+               AND COALESCE(ended_at, started_at + duration_secs) > ?1",
+            params![started_at, ended_at],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT INTO sessions (started_at, ended_at, round_type, duration_secs, target_secs, completed, task_name, manual)
+         VALUES (?1, ?2, 'work', ?3, ?4, ?5, ?6, 1)",
+        params![started_at, ended_at, duration_secs, target, (duration_secs >= target) as i64, task],
+    )
+    .map_err(|e| e.to_string())?;
+    let id = conn.last_insert_rowid();
+    log::info!("[db] manual session added: id={id} task={task} start={started_at} duration={duration_secs}s");
+    Ok(ManualAddResult { id, overlaps: overlaps as u32 })
+}
+
+/// Finished work sessions of `task_name` that started in `[from_ts, to_ts)`.
+/// The in-progress session (`ended_at IS NULL`) is excluded: the engine keeps
+/// overwriting its duration, so it cannot be edited until it is reset.
+pub fn list_task_sessions(
+    conn: &Connection,
+    task_name: &str,
+    from_ts: i64,
+    to_ts: i64,
+) -> Result<Vec<SessionItem>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, started_at, ended_at, duration_secs, target_secs, completed, manual
+         FROM sessions
+         WHERE round_type = 'work' AND duration_secs >= 120 AND ended_at IS NOT NULL
+           AND COALESCE(NULLIF(task_name, ''), 'General') = ?1 COLLATE NOCASE
+           AND started_at >= ?2 AND started_at < ?3
+         ORDER BY started_at ASC",
+    )?;
+    let rows = stmt.query_map(params![task_name.trim(), from_ts, to_ts], |r| {
+        Ok(SessionItem {
+            id: r.get(0)?,
+            started_at: r.get(1)?,
+            ended_at: r.get(2)?,
+            duration_secs: r.get::<_, i64>(3)? as u32,
+            target_secs: r.get::<_, i64>(4)? as u32,
+            completed: r.get::<_, i64>(5)? == 1,
+            manual: r.get::<_, i64>(6)? == 1,
+        })
+    })?;
+    rows.collect()
+}
+
+/// Removes `remove_secs` from a finished session: keeps `started_at`, moves `ended_at`
+/// back and recomputes `completed` against the session's target. A session left
+/// under 2 minutes is deleted (the UI confirms that first).
+/// Errors: `not_found`, `in_progress`, `invalid_amount`.
+pub fn trim_session(
+    conn: &Connection,
+    session_id: i64,
+    remove_secs: u32,
+) -> std::result::Result<TrimOutcome, String> {
+    if remove_secs == 0 {
+        return Err("invalid_amount".into());
+    }
+    let row: Option<(Option<i64>, i64, i64)> = conn
+        .query_row(
+            "SELECT ended_at, duration_secs, target_secs FROM sessions WHERE id = ?1",
+            params![session_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            e => Err(e.to_string()),
+        })?;
+    let (ended_at, duration, target) = row.ok_or_else(|| "not_found".to_string())?;
+    let ended_at = ended_at.ok_or_else(|| "in_progress".to_string())?;
+
+    let new_duration = duration - remove_secs as i64;
+    if new_duration < MANUAL_MIN_SECS as i64 {
+        conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])
+            .map_err(|e| e.to_string())?;
+        log::info!("[db] session {session_id} deleted after trimming {remove_secs}s");
+        return Ok(TrimOutcome::Deleted);
+    }
+    let target = if target > 0 { target } else { 1500 };
+    conn.execute(
+        "UPDATE sessions SET duration_secs = ?1, ended_at = ?2, completed = ?3 WHERE id = ?4",
+        params![new_duration, ended_at - remove_secs as i64, (new_duration >= target) as i64, session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    log::info!("[db] session {session_id} trimmed by {remove_secs}s → {new_duration}s");
+    Ok(TrimOutcome::Trimmed)
+}
+
+// ---------------------------------------------------------------------------
 // Stats queries
 // ---------------------------------------------------------------------------
 
@@ -1190,5 +1344,96 @@ mod tests {
         let still_default = get_presets(&conn).unwrap();
         assert_eq!(still_default.len(), 1);
         assert_eq!(still_default[0].name, "Default");
+    }
+
+    #[test]
+    fn manual_session_add_validates_and_counts_in_stats() {
+        let conn = setup();
+        let now = unix_now();
+        assert_eq!(add_manual_session(&conn, "Math", now - 3600, 60, 1500).unwrap_err(), "too_short");
+        assert_eq!(
+            add_manual_session(&conn, "Math", now - 13 * 3600, 12 * 3600 + 1, 1500).unwrap_err(),
+            "too_long"
+        );
+        assert_eq!(add_manual_session(&conn, "Math", now, 1500, 1500).unwrap_err(), "in_future");
+
+        let res = add_manual_session(&conn, "Math", now - 3600, 1800, 1500).unwrap();
+        assert_eq!(res.overlaps, 0);
+        let (completed, manual, ended): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT completed, manual, ended_at FROM sessions WHERE id = ?1",
+                [res.id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((completed, manual, ended), (1, 1, now - 1800));
+
+        // Shorter than the target: not a completed pomodoro.
+        let short = add_manual_session(&conn, "Math", now - 7200, 600, 1500).unwrap();
+        let completed: i64 = conn
+            .query_row("SELECT completed FROM sessions WHERE id = ?1", [short.id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(completed, 0);
+
+        let summary = get_tasks_summary(&conn).unwrap();
+        let math = summary.iter().find(|t| t.name == "Math").unwrap();
+        assert_eq!(math.all_time_secs, 2400);
+    }
+
+    #[test]
+    fn manual_session_reports_overlaps() {
+        let conn = setup();
+        let now = unix_now();
+        add_manual_session(&conn, "Math", now - 3600, 1800, 1500).unwrap();
+        let res = add_manual_session(&conn, "History", now - 2700, 1800, 1500).unwrap();
+        assert_eq!(res.overlaps, 1);
+        let res = add_manual_session(&conn, "History", now - 7200, 1800, 1500).unwrap();
+        assert_eq!(res.overlaps, 0);
+    }
+
+    #[test]
+    fn list_task_sessions_filters_task_range_and_in_progress() {
+        let conn = setup();
+        let now = unix_now();
+        let a = add_manual_session(&conn, "Math", now - 3600, 1800, 1500).unwrap();
+        add_manual_session(&conn, "History", now - 3600, 1800, 1500).unwrap();
+        add_manual_session(&conn, "Math", now - 100_000, 1800, 1500).unwrap();
+        // In-progress timer session (ended_at NULL) must be hidden.
+        insert_session(&conn, "work", 600, 1500, "Math").unwrap();
+
+        let list = list_task_sessions(&conn, "math", now - 50_000, now + 10).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, a.id);
+        assert!(list[0].manual);
+    }
+
+    #[test]
+    fn trim_session_shortens_recomputes_and_deletes() {
+        let conn = setup();
+        let id = insert_session(&conn, "work", 6600, 1500, "Math").unwrap();
+        complete_session(&conn, id, 6600, true).unwrap();
+        let ended: i64 = conn
+            .query_row("SELECT ended_at FROM sessions WHERE id = ?1", [id], |r| r.get(0))
+            .unwrap();
+
+        // 1h50 → 20 min, below the 25 min target: no longer completed.
+        assert_eq!(trim_session(&conn, id, 5400).unwrap(), TrimOutcome::Trimmed);
+        let (dur, end, completed): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT duration_secs, ended_at, completed FROM sessions WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((dur, end, completed), (1200, ended - 5400, 0));
+
+        assert_eq!(trim_session(&conn, id, 1100).unwrap(), TrimOutcome::Deleted);
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+
+        assert_eq!(trim_session(&conn, id, 60).unwrap_err(), "not_found");
+        let running = insert_session(&conn, "work", 600, 1500, "Math").unwrap();
+        assert_eq!(trim_session(&conn, running, 60).unwrap_err(), "in_progress");
+        assert_eq!(trim_session(&conn, running, 0).unwrap_err(), "invalid_amount");
     }
 }

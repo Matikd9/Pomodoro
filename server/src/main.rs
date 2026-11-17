@@ -100,6 +100,7 @@ pub enum WsEvent {
     Reset { payload: TimerSnapshot },
     SettingsChanged { payload: Settings },
     SessionsCleared,
+    SessionsChanged { payload: TimerSnapshot },
     PresetsChanged { payload: Vec<queries::PresetItem> },
     TaskChanged { payload: TimerSnapshot },
     DayChanged { payload: TimerSnapshot },
@@ -178,7 +179,8 @@ impl ServerController {
     }
 
     pub fn reset(&self) -> TimerSnapshot {
-        self.sequence.lock().unwrap().reset();
+        // Keep the round counter: studied time is saved as a session and must not cost
+        // progress in the cycle. Only the midnight rollover returns to round 1.
         self.engine.send(TimerCommand::Reset);
         self.get_snapshot()
     }
@@ -391,7 +393,8 @@ async fn main() {
 
                             let is_work = seq_thread.lock().unwrap().current_round == RoundType::Work;
                             if is_work {
-                                if elapsed_secs == MIN_RECORD_SECS && current_session_id.is_none() {
+                                // `>=`, not `==`: a tick that skips second 120 must not lose the round.
+                                if elapsed_secs >= MIN_RECORD_SECS && current_session_id.is_none() {
                                     let total = {
                                         let seq = seq_thread.lock().unwrap();
                                         let s = settings_thread.lock().unwrap();
@@ -603,6 +606,9 @@ async fn main() {
         .route("/api/settings", get(api_settings_get).post(api_settings_set))
         .route("/api/settings/reset", post(api_settings_reset))
         .route("/api/sessions/clear", post(api_sessions_clear))
+        .route("/api/sessions/manual", post(api_sessions_add_manual))
+        .route("/api/sessions/list", get(api_sessions_list_for_task))
+        .route("/api/sessions/trim", post(api_sessions_trim))
         .route("/api/themes", get(api_themes_list))
         .route("/api/telegram/test", post(api_telegram_test))
         .route("/api/telegram/send", post(api_telegram_send))
@@ -1187,6 +1193,67 @@ async fn api_sessions_clear(
     conn.execute("DELETE FROM sessions", []).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let _ = ctl.broadcast_tx.send(WsEvent::SessionsCleared);
     Ok(StatusCode::OK)
+}
+
+// Manual time adjustments. Validation errors (too_short, in_progress, …) map to 400;
+// the UI validates first and shows localized messages, so these are a backstop.
+
+#[derive(Deserialize)]
+struct AddManualReq {
+    task_name: String,
+    started_at: i64,
+    duration_secs: u32,
+}
+
+async fn api_sessions_add_manual(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<AddManualReq>,
+) -> Result<Json<queries::ManualAddResult>, (StatusCode, String)> {
+    let target = ctl.settings.lock().map(|s| s.time_work_secs).unwrap_or(1500);
+    // Drop the DB guard before get_snapshot(), which locks the DB again (non-reentrant).
+    let result = {
+        let conn = ctl.db.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::new()))?;
+        queries::add_manual_session(&conn, &req.task_name, req.started_at, req.duration_secs, target)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?
+    };
+    let _ = ctl.broadcast_tx.send(WsEvent::SessionsChanged { payload: ctl.get_snapshot() });
+    Ok(Json(result))
+}
+
+#[derive(Deserialize)]
+struct ListSessionsQuery {
+    task_name: String,
+    from_ts: i64,
+    to_ts: i64,
+}
+
+async fn api_sessions_list_for_task(
+    State(ctl): State<Arc<ServerController>>,
+    Query(q): Query<ListSessionsQuery>,
+) -> Result<Json<Vec<queries::SessionItem>>, StatusCode> {
+    let conn = ctl.db.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let list = queries::list_task_sessions(&conn, &q.task_name, q.from_ts, q.to_ts)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(list))
+}
+
+#[derive(Deserialize)]
+struct TrimSessionReq {
+    session_id: i64,
+    remove_secs: u32,
+}
+
+async fn api_sessions_trim(
+    State(ctl): State<Arc<ServerController>>,
+    Json(req): Json<TrimSessionReq>,
+) -> Result<Json<queries::TrimOutcome>, (StatusCode, String)> {
+    let outcome = {
+        let conn = ctl.db.lock().map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, String::new()))?;
+        queries::trim_session(&conn, req.session_id, req.remove_secs)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?
+    };
+    let _ = ctl.broadcast_tx.send(WsEvent::SessionsChanged { payload: ctl.get_snapshot() });
+    Ok(Json(outcome))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

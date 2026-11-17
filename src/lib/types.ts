@@ -174,6 +174,25 @@ export interface TaskStatsSummary {
   today_rounds: number;
 }
 
+/** A finished work session (mirrors Rust `SessionItem`). Timestamps are unix seconds. */
+export interface SessionItem {
+  id: number;
+  started_at: number;
+  ended_at: number;
+  duration_secs: number;
+  target_secs: number;
+  completed: boolean;
+  manual: boolean;
+}
+
+export interface ManualAddResult {
+  id: number;
+  /** Other work sessions whose time range overlaps the new one. */
+  overlaps: number;
+}
+
+export type TrimOutcome = 'trimmed' | 'deleted';
+
 export interface ObsidianExportResult {
   success: boolean;
   exported: boolean;
@@ -191,4 +210,3 @@ export interface PresetItem {
   long_break_secs: number;
   rounds: number;
 }
-

@@ -13,6 +13,7 @@
     onTimerResumed,
     onRoundChange,
     onTimerReset,
+    onSessionsChanged,
     onTaskChanged,
     onDayChanged,
     setSetting,
@@ -289,6 +290,10 @@
         }),
         await onTaskChanged((taskSnap) => {
           timerState.set(taskSnap);
+        }),
+        await onSessionsChanged((changedSnap) => {
+          // Time was added/removed by hand: refresh today's focus total.
+          timerState.set(changedSnap);
         }),
         await onDayChanged((daySnap) => {
           timerState.set(daySnap);
